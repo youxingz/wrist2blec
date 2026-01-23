@@ -1,0 +1,67 @@
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/gpio.h>
+
+static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
+__attribute__((used)) volatile uint32_t hb = 0x12345678;
+
+int main(void)
+{
+    hb = 0xDEADBEEF;   // 一进 main 就改
+    if (!device_is_ready(led.port)) {
+        hb = 0xE0010001;  // port not ready
+        while (1) { }  // 即使 GPIO 设备不 ready，也让 hb 变化
+    }
+
+    int ret =gpio_pin_configure_dt(&led, GPIO_OUTPUT_INACTIVE);
+    if (ret) {
+        hb = 0xE0010002 | (uint32_t)(ret & 0xFFFF);  // configure error
+        while (1) { }  // 即使配置失败，也让 hb 变化
+    }
+
+    while (1) {
+      hb ^= 0xA5A5A5A5;
+      (void)gpio_pin_toggle_dt(&led);
+      k_msleep(200);
+    }
+}
+
+// #include <zephyr/kernel.h>
+
+// __attribute__((used)) volatile uint32_t hb = 0x11111111;
+
+// static int mark_pre_kernel_1(void)
+// {
+//     hb = 0xAAAA0001;
+//     return 0;
+// }
+// SYS_INIT(mark_pre_kernel_1, PRE_KERNEL_1, 0);
+
+// static int mark_pre_kernel_2(void)
+// {
+//     hb = 0xAAAA0002;
+//     return 0;
+// }
+// SYS_INIT(mark_pre_kernel_2, PRE_KERNEL_2, 0);
+
+// static int mark_post_kernel(void)
+// {
+//     hb = 0xAAAA0003;
+//     return 0;
+// }
+// SYS_INIT(mark_post_kernel, POST_KERNEL, 0);
+
+// static int mark_application(void)
+// {
+//     hb = 0xAAAA0004;
+//     return 0;
+// }
+// SYS_INIT(mark_application, APPLICATION, 0);
+
+// int main(void)
+// {
+//     hb = 0xDEADBEEF;
+//     while (1) {
+//         hb ^= 0xA5A5A5A5;
+//         k_busy_wait(1000);
+//     }
+// }

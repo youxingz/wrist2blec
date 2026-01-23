@@ -1,0 +1,6 @@
+board:
+  name: eigen_blec_nrf52833
+  full_name: Eigeneuro nRF52833 Custom Board
+  vendor: eigeneuro
+  socs:
+    - name: nrf52833

@@ -1,0 +1,180 @@
+
+---
+events:
+  -
+    kind: "find_package-v1"
+    backtrace:
+      - "CMakeLists.txt:5 (find_package)"
+    name: "Zephyr"
+    configs:
+      -
+        filename: "ZephyrConfig.cmake"
+        kind: "cmake"
+      -
+        filename: "zephyr-config.cmake"
+        kind: "cmake"
+    version_request:
+      exact: false
+    settings:
+      required: "required_explicit"
+      quiet: false
+      global: false
+      policy_scope: true
+      bypass_provider: false
+      names:
+        - "Zephyr"
+      path_suffixes:
+        - ""
+      paths:
+        CMAKE_FIND_USE_CMAKE_PATH: true
+        CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+        CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+        CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+        CMAKE_FIND_USE_INSTALL_PREFIX: true
+        CMAKE_FIND_USE_PACKAGE_ROOT_PATH: true
+        CMAKE_FIND_USE_CMAKE_PACKAGE_REGISTRY: true
+        CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY: true
+        CMAKE_FIND_ROOT_PATH_MODE: "BOTH"
+    candidates:
+      -
+        path: "/Users/youxingz/zephyrproject/apps/wrist2/wrist2_blec/CMakeFiles/pkgRedirects/ZephyrConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/Users/youxingz/zephyrproject/apps/wrist2/wrist2_blec/CMakeFiles/pkgRedirects/zephyr-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/Users/youxingz/zephyrproject/westenv/ZephyrConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/Users/youxingz/zephyrproject/westenv/zephyr-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/Users/youxingz/.nvm/versions/node/v22.16.0/ZephyrConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/Users/youxingz/.nvm/versions/node/v22.16.0/zephyr-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/Users/youxingz/.vscode/extensions/stmicroelectronics.stm32cube-ide-build-cmake-1.43.0/resources/cube-cmake/darwin/ZephyrConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/Users/youxingz/.vscode/extensions/stmicroelectronics.stm32cube-ide-build-cmake-1.43.0/resources/cube-cmake/darwin/zephyr-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/Users/youxingz/Library/Application Support/Code/User/globalStorage/github.copilot-chat/debugCommand/ZephyrConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/Users/youxingz/Library/Application Support/Code/User/globalStorage/github.copilot-chat/debugCommand/zephyr-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/Users/youxingz/Library/Application Support/Code/User/globalStorage/github.copilot-chat/copilotCli/ZephyrConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/Users/youxingz/Library/Application Support/Code/User/globalStorage/github.copilot-chat/copilotCli/zephyr-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/Users/youxingz/.vscode/extensions/stmicroelectronics.stm32cube-ide-core-1.1.0/resources/binaries/darwin/aarch64/ZephyrConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/Users/youxingz/.vscode/extensions/stmicroelectronics.stm32cube-ide-core-1.1.0/resources/binaries/darwin/aarch64/zephyr-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/opt/homebrew/opt/python/libexec/ZephyrConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/opt/homebrew/opt/python/libexec/zephyr-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/opt/homebrew/ZephyrConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/opt/homebrew/zephyr-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/usr/local/ZephyrConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/usr/local/zephyr-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/System/Cryptexes/App/usr/ZephyrConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/System/Cryptexes/App/usr/zephyr-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/usr/ZephyrConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/usr/zephyr-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/ZephyrConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/zephyr-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/Users/youxingz/.vscode/extensions/ms-python.debugpy-2025.18.0-darwin-arm64/bundled/scripts/noConfigScripts/ZephyrConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/Users/youxingz/.vscode/extensions/ms-python.debugpy-2025.18.0-darwin-arm64/bundled/scripts/noConfigScripts/zephyr-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+    found: null
+    search_context:
+      ENV{PATH}:
+        - "/Users/youxingz/zephyrproject/westenv/bin"
+        - "/Users/youxingz/.nvm/versions/node/v22.16.0/bin"
+        - "/Users/youxingz/.vscode/extensions/stmicroelectronics.stm32cube-ide-build-cmake-1.43.0/resources/cube-cmake/darwin"
+        - "/Users/youxingz/Library/Application Support/Code/User/globalStorage/github.copilot-chat/debugCommand"
+        - "/Users/youxingz/Library/Application Support/Code/User/globalStorage/github.copilot-chat/copilotCli"
+        - "/Users/youxingz/.vscode/extensions/stmicroelectronics.stm32cube-ide-core-1.1.0/resources/binaries/darwin/aarch64"
+        - "/opt/homebrew/opt/python/libexec/bin"
+        - "/opt/homebrew/bin"
+        - "/opt/homebrew/sbin"
+        - "/usr/local/bin"
+        - "/System/Cryptexes/App/usr/bin"
+        - "/usr/bin"
+        - "/bin"
+        - "/usr/sbin"
+        - "/sbin"
+        - "/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin"
+        - "/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin"
+        - "/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin"
+        - "/opt/pmk/env/global/bin"
+        - "/Users/youxingz/.vscode/extensions/stmicroelectronics.stm32cube-ide-core-1.1.0/resources/binaries/darwin/aarch64"
+        - "/Users/youxingz/Library/Application Support/Code/User/globalStorage/github.copilot-chat/debugCommand"
+        - "/Users/youxingz/Library/Application Support/Code/User/globalStorage/github.copilot-chat/copilotCli"
+        - "/Users/youxingz/.vscode/extensions/stmicroelectronics.stm32cube-ide-build-cmake-1.43.0/resources/cube-cmake/darwin"
+        - "/Users/youxingz/.nvm/versions/node/v22.16.0/bin"
+        - "/opt/homebrew/opt/python/libexec/bin"
+        - "/Users/youxingz/.vscode/extensions/ms-python.debugpy-2025.18.0-darwin-arm64/bundled/scripts/noConfigScripts"
+...

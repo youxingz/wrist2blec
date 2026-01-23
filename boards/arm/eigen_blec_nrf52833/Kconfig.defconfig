@@ -1,0 +1,9 @@
+if BOARD_EIGEN_BLEC_NRF52833
+
+config BOARD
+	default "eigen_blec_nrf52833"
+
+# config BT_CTLR
+# 	default BT
+
+endif # BOARD_EIGEN_BLEC_NRF52833
