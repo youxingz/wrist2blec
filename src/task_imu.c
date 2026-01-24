@@ -1,0 +1,180 @@
+#include "inc/task_imu.h"
+
+#include "../drivers/icm_42688p.h"
+#include "../drivers/lis3mdl.h"
+
+#include <nrfx_timer.h>
+
+#include <errno.h>
+#include <zephyr/irq.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(task_imu, LOG_LEVEL_INF);
+
+static int worker_init();
+
+// nRF Timer
+#define SAMPLE_TIME_MS 2  // timer: 2ms
+#define TIMER_INST  NRF_TIMER0
+static const nrfx_timer_t timer = NRFX_TIMER_INSTANCE(TIMER_INST);
+#define TASK_IMU_PRIORITY 3
+// IMU
+static volatile uint64_t dindex = 0;
+static volatile bool dready = false;
+
+// static void task_imu_timer_interupt()
+static void on_imu_timer_running(nrf_timer_event_t event_type, void * p_context)
+{
+  if(event_type == NRF_TIMER_EVENT_COMPARE0) {
+    dindex++;
+    dready = true;
+  }
+}
+
+int task_imu_init()
+{
+// timer
+#if defined(__ZEPHYR__)
+  IRQ_CONNECT(NRFX_IRQ_NUMBER_GET(TIMER_INST), IRQ_PRIO_LOWEST,
+              nrfx_timer_irq_handler, &timer, 0);
+#endif
+  uint32_t base_frequency = NRF_TIMER_BASE_FREQUENCY_GET(timer.p_reg);
+  nrfx_timer_config_t config = NRFX_TIMER_DEFAULT_CONFIG(base_frequency);
+  // config.frequency = NRF_TIMER_FREQ_1MHz;
+  config.bit_width = NRF_TIMER_BIT_WIDTH_32;
+  config.interrupt_priority = TASK_IMU_PRIORITY;
+  int err_code = nrfx_timer_init(&timer, &config, on_imu_timer_running);
+  if (err_code == -EALREADY) {
+    LOG_INF("IMU Timer init error: -EALREADY");
+  } else if (err_code < 0) {
+    LOG_INF("IMU Timer init error: %d", err_code);
+  }
+
+// imu
+  int err = icm_42688_init();
+  if (err) {
+    LOG_INF("ICM42688 init error: %d", err);
+  }
+  err = lis3dml_dev_init();
+  if (err) {
+    LOG_INF("LIS3DML init error: %d", err);
+  }
+  LOG_INF("[IMU] init successfully.");
+
+  return 0;
+}
+
+int task_imu_uninit()
+{
+  lis3dml_uninit();
+  // icm42688p: do nothing.
+  return 0;
+}
+
+int task_imu_start()
+{
+  LOG_INF(">> [TASK/IMU] start.");
+  // IMU: 500Hz
+  icm_42688_begin();
+  // icm_42688_set_odr_fsr(/* who= */GYRO,/* ODR= */ODR_500HZ, /* FSR = */FSR_0);
+  // icm_42688_set_odr_fsr(/* who= */ALL,/* ODR= */ODR_500HZ, /* FSR = */FSR_0);
+  icm_42688_set_odr_fsr(/* who= */ALL,/* ODR= */ODR_8KHZ, /* FSR = */FSR_3);
+  icm_42688_set_gyro_notch_filter_frequency(1000.0, ALL);
+  icm_42688_set_gyro_notch_filter(true);
+  icm_42688_set_aaf_bandwidth(ALL, 0); // ~1000Hz
+  icm_42688_set_aaf(ALL, false);   // 抗锯齿
+  icm_42688_start_temp_measure();
+  icm_42688_start_gyro_measure(LN_MODE);
+  icm_42688_start_accel_measure(LN_MODE);
+  icm_42688_start_fifo_mode();
+  
+  // 磁力计: 40Hz
+  lis3dml_reboot();
+  k_msleep(10);
+  lis3dml_soft_reset();
+  k_msleep(10);
+  lis3dml_init(false, LIS3DML_FREQUENCY_1000_HZ, LIS3DML_FULLSCALE_4_GAUSS);
+  lis3dml_xy_power_mode(LIS3DML_ULTRA_HIGH_PERFORMANCE);
+  lis3dml_z_power_mode(LIS3DML_ULTRA_HIGH_PERFORMANCE);
+  lis3dml_operation_mode(LIS3DML_OPMODE_CONTINUOUS_CONVERSION);
+
+  dindex = 0;
+  uint32_t desired_ticks = nrfx_timer_ms_to_ticks(&timer, SAMPLE_TIME_MS); // ms
+  nrfx_timer_extended_compare(&timer, NRF_TIMER_CC_CHANNEL0, desired_ticks, NRF_TIMER_SHORT_COMPARE0_CLEAR_MASK, true);
+  nrfx_timer_clear(&timer);
+  nrfx_timer_enable(&timer);
+  return 0;
+}
+
+int task_imu_stop()
+{
+  LOG_INF(">> [TASK/IMU] stop.");
+  // k_timer_stop(&task_imu_timer);
+  nrfx_timer_clear(&timer);
+  if (nrfx_timer_is_enabled(&timer)) {
+    nrfx_timer_disable(&timer);
+  }
+  dindex = 0;
+  // low power -> icm42688
+  return 0;
+}
+
+
+/*
+ **************************************************
+ *                                                *
+ *  Worker Loop                                 *
+ *                                                *
+ **************************************************
+ */
+
+
+// Looper
+
+#define LOOPER_INTERVAL         1     // 1ms
+static void looper_work_handler(struct k_work *work);
+static K_WORK_DELAYABLE_DEFINE(looper_work, looper_work_handler);
+static int worker_init()
+{
+  int err = 0;
+  // err = k_work_schedule(&looper_work, K_NO_WAIT);
+  err = k_work_schedule(&looper_work, K_MSEC(200)); // 延迟 200ms 启动，确保尽可能在最后时刻
+  return 0;
+}
+
+
+static void looper_work_handler(struct k_work *work)
+{
+  // SPI & ALG
+
+  float magnetometer_tmp[3];
+  imu_data_t current;
+  while(true) {
+    if (!dready) {
+      k_usleep(100);
+      continue;
+    }
+    dready = false;
+    
+    // fetch imux9 data.
+    icm_42688_get_fifo_data();
+    current.temperature = icm_42688_get_temperature();
+    current.ax = icm_42688_get_accel_data_x();
+    current.ay = icm_42688_get_accel_data_y();
+    current.az = icm_42688_get_accel_data_z();
+    current.gx = icm_42688_get_gyro_data_x();
+    current.gy = icm_42688_get_gyro_data_y();
+    current.gz = icm_42688_get_gyro_data_z();
+    if (lis3dml_data_ready()) {
+      if (LIS3DML_SUCCESS == lis3dml_xyz_magnitude(magnetometer_tmp)) {
+        current.mx = magnetometer_tmp[0];
+        current.my = magnetometer_tmp[1];
+        current.mz = magnetometer_tmp[2];
+      }
+    }
+    
+    // Alg process:
+
+  }
+	k_work_reschedule(k_work_delayable_from_work(work), K_MSEC(LOOPER_INTERVAL));
+}

@@ -8,6 +8,9 @@ project(EigenBLEC)
 FILE(GLOB app_sources src/*.c src/inc/*.h drivers/*.c drivers/*.h)
 target_sources(app PRIVATE ${app_sources} src/main.c)
 
+# Relax warnings-as-errors for unused variables in app sources.
+target_compile_options(app PRIVATE -Wno-error=unused-variable)
+
 # ---- Hard guard (file-based): strip UICR after zephyr.hex exists ----
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 

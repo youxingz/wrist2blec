@@ -128,8 +128,6 @@ lis3dml_err_t lis3dml_temperature(float * data);
 
 lis3dml_err_t lis3dml_dev_init();
 
-lis3dml_err_t lis3dml_dev_uninit();
-
 lis3dml_err_t lis3dml_read_registers(uint8_t address, uint8_t * data, uint8_t len);
 
 lis3dml_err_t lis3dml_write_registers(uint8_t address, uint8_t * data, uint8_t len);

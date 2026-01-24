@@ -155,11 +155,6 @@ lis3dml_err_t lis3dml_dev_init()
   return LIS3DML_SUCCESS;
 }
 
-lis3dml_err_t lis3dml_dev_uninit()
-{
-  return LIS3DML_SUCCESS;
-}
-
 lis3dml_err_t lis3dml_write_registers(uint8_t reg, uint8_t * pBuf, uint8_t size)
 {
   uint8_t code = 0x00;

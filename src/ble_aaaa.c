@@ -45,16 +45,6 @@ struct bt_uuid_128 aadf_char_uuid = BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x0000AA
 
 BT_GATT_SERVICE_DEFINE(aaaa_service,
   BT_GATT_PRIMARY_SERVICE(&aaaa_service_uuid),
-  /** EMG/ECG/EOG/EEG **/
-  // State.
-  BT_GATT_CHARACTERISTIC(&aaf0_char_uuid.uuid, BT_GATT_CHRC_WRITE | BT_GATT_CHRC_WRITE_WITHOUT_RESP | BT_GATT_CHRC_NOTIFY | BT_GATT_CHRC_READ,
-            BT_GATT_PERM_READ | BT_GATT_PERM_WRITE, ble_on_aaf0_read_request, ble_on_aaf0_write_request, NULL),
-  BT_GATT_CCC(ble_ccc_cfg_changed_aaf0, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
-  // Stream.
-  BT_GATT_CHARACTERISTIC(&aaff_char_uuid.uuid, BT_GATT_CHRC_NOTIFY | BT_GATT_CHRC_READ,
-            BT_GATT_PERM_READ | BT_GATT_PERM_WRITE, NULL, NULL, NULL),
-  BT_GATT_CCC(ble_ccc_cfg_changed_aaff, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
-
   /** IMU/MAG **/
   // State.
   BT_GATT_CHARACTERISTIC(&aae0_char_uuid.uuid, BT_GATT_CHRC_WRITE | BT_GATT_CHRC_WRITE_WITHOUT_RESP | BT_GATT_CHRC_NOTIFY | BT_GATT_CHRC_READ,
@@ -86,7 +76,6 @@ static K_WORK_DELAYABLE_DEFINE(looper_work, looper_work_handler);
 
 static void looper_work_handler(struct k_work *work)
 {
-  ble_aaff_loop();
   ble_aaef_loop();
 	k_work_reschedule(k_work_delayable_from_work(work), K_MSEC(LOOPER_INTERVAL));
 }

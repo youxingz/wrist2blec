@@ -66,6 +66,11 @@ int ble_aaef_notify_commit(uint8_t * data, uint8_t len)
   return 0;
 }
 
+int ble_aaef_init()
+{
+  return 0;
+}
+
 int ble_aaef_loop()
 {
   // if ready
