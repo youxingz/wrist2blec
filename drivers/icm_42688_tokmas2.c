@@ -10,8 +10,7 @@
  */
 
 #include "icm_42688p.h"
-
-#ifdef TOKMAS_ICM42688P__
+#ifdef TOKMAS_ICM42688P2__
 #include <math.h>
 #include <zephyr/kernel.h>
 
@@ -52,6 +51,25 @@ static uint8_t _ctrl7; /* enable */
 static inline int16_t s16_from_hl(uint8_t h, uint8_t l)
 {
   return (int16_t)((uint16_t)h << 8 | (uint16_t)l);
+}
+
+/* Tokmas note:
+ * Some Tokmas ICM-42688-PC parts do NOT support multi-byte (burst) reads for UI registers.
+ * To be robust, always read as single-byte transactions.
+ *
+ * We do NOT change the platform transport API (icm_42688_read_reg), we simply loop here.
+ */
+static inline bool tokmas_read_bytes(uint8_t reg, uint8_t *buf, uint16_t len)
+{
+  if (buf == NULL || len == 0) {
+    return false;
+  }
+  for (uint16_t i = 0; i < len; i++) {
+    if (icm_42688_read_reg((uint8_t)(reg + i), &buf[i], 1) == 0) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /* Map original DFRobot/TDK ODR enum (1..15) to Tokmas ODR code (0..15).
@@ -209,26 +227,23 @@ float icm_42688_get_temperature(void)
    * (Some variants also define an offset; if you observe a fixed bias, apply it in the application.)
    */
   uint8_t data[2];
-  icm_42688_read_reg(ICM42688_TEMP_DATA1, data, 2); /* TEMP_H then TEMP_L */
+  (void)tokmas_read_bytes(ICM42688_TEMP_DATA1, data, 2); /* TEMP_H then TEMP_L */
   _temp_raw = s16_from_hl(data[0], data[1]);
   return ((float)_temp_raw) / 256.0f;
 }
 
 float icm_42688_get_accel_data_x(void)
 {
-  uint8_t d[1];
-  icm_42688_read_reg(ICM42688_ACCEL_DATA_X1, d, 1);
-  uint8_t a = d[0];
-  icm_42688_read_reg(ICM42688_ACCEL_DATA_X0, d, 1);
-  uint8_t b = d[0];
-  _accelX = s16_from_hl(a, b);
+  uint8_t d[2];
+  (void)tokmas_read_bytes(ICM42688_ACCEL_DATA_X1, d, 2);
+  _accelX = s16_from_hl(d[0], d[1]);
   return (float)_accelX * _accelRange;
 }
 
 float icm_42688_get_accel_data_y(void)
 {
   uint8_t d[2];
-  icm_42688_read_reg(ICM42688_ACCEL_DATA_Y1, d, 2);
+  (void)tokmas_read_bytes(ICM42688_ACCEL_DATA_Y1, d, 2);
   _accelY = s16_from_hl(d[0], d[1]);
   return (float)_accelY * _accelRange;
 }
@@ -236,7 +251,7 @@ float icm_42688_get_accel_data_y(void)
 float icm_42688_get_accel_data_z(void)
 {
   uint8_t d[2];
-  icm_42688_read_reg(ICM42688_ACCEL_DATA_Z1, d, 2);
+  (void)tokmas_read_bytes(ICM42688_ACCEL_DATA_Z1, d, 2);
   _accelZ = s16_from_hl(d[0], d[1]);
   return (float)_accelZ * _accelRange;
 }
@@ -244,7 +259,7 @@ float icm_42688_get_accel_data_z(void)
 float icm_42688_get_gyro_data_x(void)
 {
   uint8_t d[2];
-  icm_42688_read_reg(ICM42688_GYRO_DATA_X1, d, 2);
+  (void)tokmas_read_bytes(ICM42688_GYRO_DATA_X1, d, 2);
   _gyroX = s16_from_hl(d[0], d[1]);
   return (float)_gyroX * _gyroRange;
 }
@@ -252,7 +267,7 @@ float icm_42688_get_gyro_data_x(void)
 float icm_42688_get_gyro_data_y(void)
 {
   uint8_t d[2];
-  icm_42688_read_reg(ICM42688_GYRO_DATA_Y1, d, 2);
+  (void)tokmas_read_bytes(ICM42688_GYRO_DATA_Y1, d, 2);
   _gyroY = s16_from_hl(d[0], d[1]);
   return (float)_gyroY * _gyroRange;
 }
@@ -260,7 +275,7 @@ float icm_42688_get_gyro_data_y(void)
 float icm_42688_get_gyro_data_z(void)
 {
   uint8_t d[2];
-  icm_42688_read_reg(ICM42688_GYRO_DATA_Z1, d, 2);
+  (void)tokmas_read_bytes(ICM42688_GYRO_DATA_Z1, d, 2);
   _gyroZ = s16_from_hl(d[0], d[1]);
   return (float)_gyroZ * _gyroRange;
 }

@@ -1,5 +1,6 @@
 // #define TDK_ICM42688P__
-#define TOKMAS_ICM42688P__
+// #define TOKMAS_ICM42688P__
+#define TOKMAS_ICM42688P2__
 
 #define ENABLE_IT
 #if defined(ENABLE_IT)
