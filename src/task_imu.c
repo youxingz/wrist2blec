@@ -2,6 +2,8 @@
 
 #include "../drivers/icm_42688p.h"
 #include "../drivers/lis3mdl.h"
+#include "inc/alg.h"
+#include "inc/ble_aaaa.h"
 
 #include <nrfx_timer.h>
 
@@ -142,6 +144,12 @@ static int worker_init()
   return 0;
 }
 
+// helper func:
+static void convert2buf(imu_data_t * imu, world_pos_t * position, uint8_t * buf)
+{
+
+}
+
 
 static void looper_work_handler(struct k_work *work)
 {
@@ -149,6 +157,7 @@ static void looper_work_handler(struct k_work *work)
 
   float magnetometer_tmp[3];
   imu_data_t current;
+  world_pos_t position;
   while(true) {
     if (!dready) {
       k_usleep(100);
@@ -175,6 +184,23 @@ static void looper_work_handler(struct k_work *work)
     
     // Alg process:
 
+    int err = alg_imu_update(&current);
+    if (err) {
+      // do nothing.
+      continue;
+    }
+    err = alg_imu_get_current(&position);
+    if (err) {
+      // do nothing.
+      continue;
+    }
+
+    // if BLE enabled, commit to GATT.
+    // size: (1 + 9 + 6) * 2 = 32 bytes
+    #define CM_BUFFER_SIZE 32
+    uint8_t buf[CM_BUFFER_SIZE];
+    convert2buf(&current, &position, buf);
+    ble_aaef_notify_commit(buf, CM_BUFFER_SIZE);
   }
 	k_work_reschedule(k_work_delayable_from_work(work), K_MSEC(LOOPER_INTERVAL));
 }
