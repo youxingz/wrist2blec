@@ -6,7 +6,7 @@
 LOG_MODULE_REGISTER(AAE, LOG_LEVEL_INF);
 
 #define STATE_CODE_LEN 20
-#define STREAM_BUFFER_LEN 512
+#define STREAM_BUFFER_LEN 32
 
 typedef struct {
   uint8_t state_codes[STATE_CODE_LEN];
@@ -63,6 +63,11 @@ ssize_t ble_on_aae0_write_request(struct bt_conn *conn, const struct bt_gatt_att
 
 int ble_aaef_notify_commit(uint8_t * data, uint8_t len)
 {
+  // notify
+  if (len <= 0) return -1;
+  if (!data) return -1;
+  memcpy(state_aae.stream_buffer, data, len);
+  state_aae.stream_ready = true;
   return 0;
 }
 
@@ -73,15 +78,19 @@ int ble_aaef_init()
 
 int ble_aaef_loop()
 {
-  // if ready
+  // if device connected.
   if (!state_aae.aaef_notify_enabled) {
     return -1;
   }
+  // if ready.
   if (!state_aae.stream_ready) {
     return -2;
   }
+  state_aae.stream_ready = false;
   int err = bt_gatt_notify(NULL, &aaaa_service.attrs[IMU_AAEF_INDEX], (uint8_t*)&(state_aae.stream_buffer), (STREAM_BUFFER_LEN + 1));
   if (err) {
+    // try again once.
+    err = bt_gatt_notify(NULL, &aaaa_service.attrs[IMU_AAEF_INDEX], (uint8_t*)&(state_aae.stream_buffer), (STREAM_BUFFER_LEN + 1));
     return err;
   }
   return 0;

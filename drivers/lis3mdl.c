@@ -271,3 +271,8 @@ lis3dml_err_t lis3dml_temperature(float * value)
 
   return LIS3DML_SUCCESS;
 }
+
+float lis3dml_get_range_magnetic()
+{
+  return sensitivity;
+}

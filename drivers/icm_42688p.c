@@ -772,3 +772,12 @@ bool icm_42688_set_ui_filter(uint8_t who, uint8_t filterOrder, uint8_t UIFilterI
   }
   return ret;
 }
+
+float icm_42688_get_range_accel()
+{
+  return _accelRange;
+}
+float icm_42688_get_range_gyro()
+{
+  return _gyroRange;
+}

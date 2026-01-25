@@ -120,6 +120,8 @@ lis3dml_err_t lis3dml_xyz_magnitude(float * data);
 */
 lis3dml_err_t lis3dml_temperature(float * data);
 
+
+float lis3dml_get_range_magnetic();
 /**
   * @}
   */

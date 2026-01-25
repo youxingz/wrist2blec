@@ -23,6 +23,9 @@ static const nrfx_timer_t timer = NRFX_TIMER_INSTANCE(TIMER_INST);
 // IMU
 static volatile uint64_t dindex = 0;
 static volatile bool dready = false;
+static float range_accel;
+static float range_gyro;
+static float range_magnetic;
 
 // static void task_imu_timer_interupt()
 static void on_imu_timer_running(nrf_timer_event_t event_type, void * p_context)
@@ -35,7 +38,7 @@ static void on_imu_timer_running(nrf_timer_event_t event_type, void * p_context)
 
 int task_imu_init()
 {
-// timer
+  // timer
 #if defined(__ZEPHYR__)
   IRQ_CONNECT(NRFX_IRQ_NUMBER_GET(TIMER_INST), IRQ_PRIO_LOWEST,
               nrfx_timer_irq_handler, &timer, 0);
@@ -52,7 +55,7 @@ int task_imu_init()
     LOG_INF("IMU Timer init error: %d", err_code);
   }
 
-// imu
+  // imu
   int err = icm_42688_init();
   if (err) {
     LOG_INF("ICM42688 init error: %d", err);
@@ -62,7 +65,19 @@ int task_imu_init()
     LOG_INF("LIS3DML init error: %d", err);
   }
   LOG_INF("[IMU] init successfully.");
+  
+  // alg
+  alg_config_t alg_config = {
+    .sample_us = 2000, // 2ms
+  };
+  err = alg_imu_init(alg_config);
+  if (err) {
+    LOG_INF("Alg init error: %d", err);
+  }
+  LOG_INF("[ALG] init successfully.");
 
+  // worker
+  worker_init();
   return 0;
 }
 
@@ -99,6 +114,11 @@ int task_imu_start()
   lis3dml_xy_power_mode(LIS3DML_ULTRA_HIGH_PERFORMANCE);
   lis3dml_z_power_mode(LIS3DML_ULTRA_HIGH_PERFORMANCE);
   lis3dml_operation_mode(LIS3DML_OPMODE_CONTINUOUS_CONVERSION);
+
+  range_accel = icm_42688_get_range_accel();
+  range_gyro = icm_42688_get_range_gyro();
+  range_magnetic = lis3dml_get_range_magnetic();
+  // LOG_INF("range_accel: %f, range_gyro: %f, range_magnetic: %f", range_accel, range_gyro, range_magnetic);
 
   dindex = 0;
   uint32_t desired_ticks = nrfx_timer_ms_to_ticks(&timer, SAMPLE_TIME_MS); // ms
@@ -147,7 +167,57 @@ static int worker_init()
 // helper func:
 static void convert2buf(imu_data_t * imu, world_pos_t * position, uint8_t * buf)
 {
-
+  // imu:
+  int16_t ax = (int16_t)(imu->ax / range_accel);
+  int16_t ay = (int16_t)(imu->ay / range_accel);
+  int16_t az = (int16_t)(imu->az / range_accel);
+  int16_t gx = (int16_t)(imu->gx / range_gyro);
+  int16_t gy = (int16_t)(imu->gy / range_gyro);
+  int16_t gz = (int16_t)(imu->gz / range_gyro);
+  int16_t mx = (int16_t)(imu->mx / range_magnetic);
+  int16_t my = (int16_t)(imu->my / range_magnetic);
+  int16_t mz = (int16_t)(imu->mz / range_magnetic);
+  int16_t temperature = (int16_t)(imu->temperature * 100);
+  buf[0] = (ax >> 8) & 0xFF;
+  buf[1] = ax & 0xFF;
+  buf[2] = (ay >> 8) & 0xFF;
+  buf[3] = ay & 0xFF;
+  buf[4] = (az >> 8) & 0xFF;
+  buf[5] = az & 0xFF;
+  buf[6] = (gx >> 8) & 0xFF;
+  buf[7] = gx & 0xFF;
+  buf[8] = (gy >> 8) & 0xFF;
+  buf[9] = gy & 0xFF;
+  buf[10] = (gz >> 8) & 0xFF;
+  buf[11] = gz & 0xFF;
+  buf[12] = (mx >> 8) & 0xFF;
+  buf[13] = mx & 0xFF;
+  buf[14] = (my >> 8) & 0xFF;
+  buf[15] = my & 0xFF;
+  buf[16] = (mz >> 8) & 0xFF;
+  buf[17] = mz & 0xFF;
+  buf[18] = (temperature >> 8) & 0xFF;
+  buf[19] = temperature & 0xFF;
+  // position:
+  int16_t x = (int16_t)(position->x * 100);
+  int16_t y = (int16_t)(position->y * 100);
+  int16_t z = (int16_t)(position->z * 100);
+  int16_t yaw = (int16_t)(position->yaw * 100);
+  int16_t pitch = (int16_t)(position->pitch * 100);
+  int16_t roll = (int16_t)(position->roll * 100);
+  buf[20] = (x >> 8) & 0xFF;
+  buf[21] = x & 0xFF;
+  buf[22] = (y >> 8) & 0xFF;
+  buf[23] = y & 0xFF;
+  buf[24] = (z >> 8) & 0xFF;
+  buf[25] = z & 0xFF;
+  buf[26] = (yaw >> 8) & 0xFF;
+  buf[27] = yaw & 0xFF;
+  buf[28] = (pitch >> 8) & 0xFF;
+  buf[29] = pitch & 0xFF;
+  buf[30] = (roll >> 8) & 0xFF;
+  buf[31] = roll & 0xFF;
+  return;
 }
 
 

@@ -1204,6 +1204,9 @@ void icm_42688_set_aaf(uint8_t who, bool mode);
 bool icm_42688_set_ui_filter(uint8_t who,uint8_t filterOrder ,uint8_t UIFilterIndex);
 
 
+float icm_42688_get_range_accel();
+float icm_42688_get_range_gyro();
+
 //  implemented by MCU module.
 
 /**
