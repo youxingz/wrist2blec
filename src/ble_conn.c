@@ -91,7 +91,7 @@ int ble_adv_start(void)
 	 * - 这里不加 BT_LE_ADV_OPT_USE_NAME，因为我们把 NAME 放在 sd[] 里了
 	 */
 	const struct bt_le_adv_param *adv_param =
-		BT_LE_ADV_PARAM(BT_LE_ADV_OPT_SCANNABLE | BT_LE_ADV_OPT_CONN | BT_LE_ADV_OPT_USE_NRPA,
+		BT_LE_ADV_PARAM(BT_LE_ADV_OPT_SCANNABLE | BT_LE_ADV_OPT_CONN | BT_LE_ADV_OPT_USE_IDENTITY,
 				BT_GAP_ADV_FAST_INT_MIN_2,
 				BT_GAP_ADV_FAST_INT_MAX_2,
 				NULL);

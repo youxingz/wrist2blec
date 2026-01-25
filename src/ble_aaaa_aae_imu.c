@@ -6,7 +6,7 @@
 LOG_MODULE_REGISTER(AAE, LOG_LEVEL_INF);
 
 #define STATE_CODE_LEN 20
-#define STREAM_BUFFER_LEN 32
+#define STREAM_BUFFER_LEN 34
 
 typedef struct {
   uint8_t state_codes[STATE_CODE_LEN];
@@ -87,10 +87,10 @@ int ble_aaef_loop()
     return -2;
   }
   state_aae.stream_ready = false;
-  int err = bt_gatt_notify(NULL, &aaaa_service.attrs[IMU_AAEF_INDEX], (uint8_t*)&(state_aae.stream_buffer), (STREAM_BUFFER_LEN + 1));
+  int err = bt_gatt_notify(NULL, &aaaa_service.attrs[IMU_AAEF_INDEX], (uint8_t*)&(state_aae.stream_buffer), (STREAM_BUFFER_LEN));
   if (err) {
     // try again once.
-    err = bt_gatt_notify(NULL, &aaaa_service.attrs[IMU_AAEF_INDEX], (uint8_t*)&(state_aae.stream_buffer), (STREAM_BUFFER_LEN + 1));
+    err = bt_gatt_notify(NULL, &aaaa_service.attrs[IMU_AAEF_INDEX], (uint8_t*)&(state_aae.stream_buffer), (STREAM_BUFFER_LEN));
     return err;
   }
   return 0;

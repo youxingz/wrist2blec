@@ -20,7 +20,8 @@ LOG_MODULE_REGISTER(spiNRF52, LOG_LEVEL_INF);
 #define PIN_SPI_MOSI     NRF_GPIO_PIN_MAP(0, 11)
 #define PIN_SPI_MISO     NRF_GPIO_PIN_MAP(1, 9)
 
-static nrfx_spim_t spim = NRFX_SPIM_INSTANCE(0);
+// nrfx 4.x: instance macro expects peripheral base address
+static nrfx_spim_t spim = NRFX_SPIM_INSTANCE(NRF_SPIM0);
 
 static inline void lis3mdl_cs_select()
 {
@@ -52,15 +53,15 @@ int icm_42688_spi_init()
   ); // NRF_SPIM_PIN_NOT_CONNECTED
   spim_config.frequency = NRFX_MHZ_TO_HZ(8); // NRF_SPIM_FREQ_32M;
 
-  nrfx_err_t err = nrfx_spim_init(&spim, &spim_config, NULL, NULL);
-  if (err == NRFX_ERROR_INVALID_STATE)
+  int err = nrfx_spim_init(&spim, &spim_config, NULL, NULL);
+  if (err == EALREADY)
   {
     LOG_WRN("Reinit again.");
     nrfx_spim_uninit(&spim);
     err = nrfx_spim_init(&spim, &spim_config, NULL, NULL);
   }
   
-  if (err != NRFX_SUCCESS) {
+  if (err) {
     LOG_ERR("nrfx_spim_init() failed: 0x%08x", err);
   }
 
@@ -93,9 +94,9 @@ void icm_42688_write_reg(uint8_t reg, uint8_t* pBuf, uint8_t size)
   }
   nrfx_spim_xfer_desc_t xfer_desc = NRFX_SPIM_XFER_TX(tx_buf, index);
   icm42688p_cs_select();
-  nrfx_err_t err = nrfx_spim_xfer(&spim, &xfer_desc, 0);
+  int err = nrfx_spim_xfer(&spim, &xfer_desc, 0);
   icm42688p_cs_unselect();
-  if (err != NRFX_SUCCESS) {
+  if (err) {
     // print error.
 #ifdef ENABLE_DEBUG
     printk("nRF: SPI TXRX Error: %d\n", err);
@@ -121,9 +122,9 @@ uint8_t icm_42688_read_reg(uint8_t reg, uint8_t* pBuf, uint8_t size)
   }
   nrfx_spim_xfer_desc_t xfer_desc = NRFX_SPIM_XFER_TRX(tx_buf, index, rx_buf, index);
   icm42688p_cs_select();
-  nrfx_err_t err = nrfx_spim_xfer(&spim, &xfer_desc, 0);
+  int err = nrfx_spim_xfer(&spim, &xfer_desc, 0);
   icm42688p_cs_unselect();
-  if (err != NRFX_SUCCESS) {
+  if (err) {
     // print error.
 #ifdef ENABLE_DEBUG
     printk("nRF: SPI TXRX Error: %d\n", err);
@@ -173,9 +174,9 @@ lis3dml_err_t lis3dml_write_registers(uint8_t reg, uint8_t * pBuf, uint8_t size)
   }
   nrfx_spim_xfer_desc_t xfer_desc = NRFX_SPIM_XFER_TX(tx_buf, index);
   lis3mdl_cs_select();
-  nrfx_err_t err = nrfx_spim_xfer(&spim, &xfer_desc, 0);
+  int err = nrfx_spim_xfer(&spim, &xfer_desc, 0);
   lis3mdl_cs_unselect();
-  if (err != NRFX_SUCCESS) {
+  if (err) {
     // print error.
 #ifdef ENABLE_DEBUG
     printk("nRF: SPI TXRX Error: %d\n", err);
@@ -202,9 +203,9 @@ lis3dml_err_t lis3dml_read_registers(uint8_t reg, uint8_t * pBuf, uint8_t size)
   }
   nrfx_spim_xfer_desc_t xfer_desc = NRFX_SPIM_XFER_TRX(tx_buf, index, rx_buf, index);
   lis3mdl_cs_select();
-  nrfx_err_t err = nrfx_spim_xfer(&spim, &xfer_desc, 0);
+  int err = nrfx_spim_xfer(&spim, &xfer_desc, 0);
   lis3mdl_cs_unselect();
-  if (err != NRFX_SUCCESS) {
+  if (err) {
     // print error.
 #ifdef ENABLE_DEBUG
     printk("nRF: SPI TXRX Error: %d\n", err);

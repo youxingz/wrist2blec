@@ -16,9 +16,9 @@ LOG_MODULE_REGISTER(task_imu, LOG_LEVEL_INF);
 static int worker_init();
 
 // nRF Timer
-#define SAMPLE_TIME_MS 2  // timer: 2ms
-#define TIMER_INST  NRF_TIMER0
-static const nrfx_timer_t timer = NRFX_TIMER_INSTANCE(TIMER_INST);
+#define SAMPLE_TIME_MS 10  // timer: 2ms
+#define TIMER_INST  NRF_TIMER1
+static nrfx_timer_t timer = NRFX_TIMER_INSTANCE(TIMER_INST);
 #define TASK_IMU_PRIORITY 3
 // IMU
 static volatile uint64_t dindex = 0;
@@ -60,6 +60,7 @@ int task_imu_init()
   if (err) {
     LOG_INF("ICM42688 init error: %d", err);
   }
+
   err = lis3dml_dev_init();
   if (err) {
     LOG_INF("LIS3DML init error: %d", err);
@@ -68,7 +69,7 @@ int task_imu_init()
   
   // alg
   alg_config_t alg_config = {
-    .sample_us = 2000, // 2ms
+    .sample_us = SAMPLE_TIME_MS * 1000, // 2ms
   };
   err = alg_imu_init(alg_config);
   if (err) {
@@ -153,7 +154,7 @@ int task_imu_stop()
 
 // Looper
 
-#define LOOPER_INTERVAL         1     // 1ms
+#define LOOPER_INTERVAL         300     // 0.3ms
 static void looper_work_handler(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(looper_work, looper_work_handler);
 static int worker_init()
@@ -165,8 +166,12 @@ static int worker_init()
 }
 
 // helper func:
-static void convert2buf(imu_data_t * imu, world_pos_t * position, uint8_t * buf)
+static int convert2buf(uint16_t index, imu_data_t * imu, world_pos_t * position, uint8_t * buf)
 {
+  // ts:
+  int i = 0;
+  buf[i++] = (index >> 8) & 0xFF;
+  buf[i++] = index & 0xFF;
   // imu:
   int16_t ax = (int16_t)(imu->ax / range_accel);
   int16_t ay = (int16_t)(imu->ay / range_accel);
@@ -178,26 +183,26 @@ static void convert2buf(imu_data_t * imu, world_pos_t * position, uint8_t * buf)
   int16_t my = (int16_t)(imu->my / range_magnetic);
   int16_t mz = (int16_t)(imu->mz / range_magnetic);
   int16_t temperature = (int16_t)(imu->temperature * 100);
-  buf[0] = (ax >> 8) & 0xFF;
-  buf[1] = ax & 0xFF;
-  buf[2] = (ay >> 8) & 0xFF;
-  buf[3] = ay & 0xFF;
-  buf[4] = (az >> 8) & 0xFF;
-  buf[5] = az & 0xFF;
-  buf[6] = (gx >> 8) & 0xFF;
-  buf[7] = gx & 0xFF;
-  buf[8] = (gy >> 8) & 0xFF;
-  buf[9] = gy & 0xFF;
-  buf[10] = (gz >> 8) & 0xFF;
-  buf[11] = gz & 0xFF;
-  buf[12] = (mx >> 8) & 0xFF;
-  buf[13] = mx & 0xFF;
-  buf[14] = (my >> 8) & 0xFF;
-  buf[15] = my & 0xFF;
-  buf[16] = (mz >> 8) & 0xFF;
-  buf[17] = mz & 0xFF;
-  buf[18] = (temperature >> 8) & 0xFF;
-  buf[19] = temperature & 0xFF;
+  buf[i++] = (ax >> 8) & 0xFF;
+  buf[i++] = ax & 0xFF;
+  buf[i++] = (ay >> 8) & 0xFF;
+  buf[i++] = ay & 0xFF;
+  buf[i++] = (az >> 8) & 0xFF;
+  buf[i++] = az & 0xFF;
+  buf[i++] = (gx >> 8) & 0xFF;
+  buf[i++] = gx & 0xFF;
+  buf[i++] = (gy >> 8) & 0xFF;
+  buf[i++] = gy & 0xFF;
+  buf[i++] = (gz >> 8) & 0xFF;
+  buf[i++] = gz & 0xFF;
+  buf[i++] = (mx >> 8) & 0xFF;
+  buf[i++] = mx & 0xFF;
+  buf[i++] = (my >> 8) & 0xFF;
+  buf[i++] = my & 0xFF;
+  buf[i++] = (mz >> 8) & 0xFF;
+  buf[i++] = mz & 0xFF;
+  buf[i++] = (temperature >> 8) & 0xFF;
+  buf[i++] = temperature & 0xFF;
   // position:
   int16_t x = (int16_t)(position->x * 100);
   int16_t y = (int16_t)(position->y * 100);
@@ -205,19 +210,19 @@ static void convert2buf(imu_data_t * imu, world_pos_t * position, uint8_t * buf)
   int16_t yaw = (int16_t)(position->yaw * 100);
   int16_t pitch = (int16_t)(position->pitch * 100);
   int16_t roll = (int16_t)(position->roll * 100);
-  buf[20] = (x >> 8) & 0xFF;
-  buf[21] = x & 0xFF;
-  buf[22] = (y >> 8) & 0xFF;
-  buf[23] = y & 0xFF;
-  buf[24] = (z >> 8) & 0xFF;
-  buf[25] = z & 0xFF;
-  buf[26] = (yaw >> 8) & 0xFF;
-  buf[27] = yaw & 0xFF;
-  buf[28] = (pitch >> 8) & 0xFF;
-  buf[29] = pitch & 0xFF;
-  buf[30] = (roll >> 8) & 0xFF;
-  buf[31] = roll & 0xFF;
-  return;
+  buf[i++] = (x >> 8) & 0xFF;
+  buf[i++] = x & 0xFF;
+  buf[i++] = (y >> 8) & 0xFF;
+  buf[i++] = y & 0xFF;
+  buf[i++] = (z >> 8) & 0xFF;
+  buf[i++] = z & 0xFF;
+  buf[i++] = (yaw >> 8) & 0xFF;
+  buf[i++] = yaw & 0xFF;
+  buf[i++] = (pitch >> 8) & 0xFF;
+  buf[i++] = pitch & 0xFF;
+  buf[i++] = (roll >> 8) & 0xFF;
+  buf[i++] = roll & 0xFF;
+  return i;
 }
 
 
@@ -231,7 +236,7 @@ static void looper_work_handler(struct k_work *work)
   while(true) {
     if (!dready) {
       k_usleep(100);
-      continue;
+      break;
     }
     dready = false;
     
@@ -257,20 +262,20 @@ static void looper_work_handler(struct k_work *work)
     int err = alg_imu_update(&current);
     if (err) {
       // do nothing.
-      continue;
+      break;
     }
     err = alg_imu_get_current(&position);
     if (err) {
       // do nothing.
-      continue;
+      break;
     }
 
     // if BLE enabled, commit to GATT.
-    // size: (1 + 9 + 6) * 2 = 32 bytes
-    #define CM_BUFFER_SIZE 32
+    // size: 2 + (1 + 9 + 6) * 2 = 34 bytes
+    #define CM_BUFFER_SIZE 34
     uint8_t buf[CM_BUFFER_SIZE];
-    convert2buf(&current, &position, buf);
-    ble_aaef_notify_commit(buf, CM_BUFFER_SIZE);
+    int len = convert2buf(dindex, &current, &position, buf);
+    ble_aaef_notify_commit(buf, len);
   }
-	k_work_reschedule(k_work_delayable_from_work(work), K_MSEC(LOOPER_INTERVAL));
+	k_work_reschedule(k_work_delayable_from_work(work), K_USEC(LOOPER_INTERVAL));
 }
