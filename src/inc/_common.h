@@ -1,3 +1,5 @@
+#pragma once
+
 typedef struct {
   float temperature;
   float ax;

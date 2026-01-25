@@ -1,5 +1,6 @@
 {
   "files.associations": {
-    "ble_aaaa_priv.h": "c"
+    "ble_aaaa_priv.h": "c",
+    "errno.h": "c"
   }
 }
