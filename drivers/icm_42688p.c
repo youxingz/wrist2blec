@@ -1,14 +1,5 @@
-/*!
- * @file DFRobot_ICM42688.cpp
- * @brief Define basic structure of DFRobot_ICM42688 class, the implementation of basic method
- * @copyright	Copyright (c) 2010 DFRobot Co.Ltd (http://www.dfrobot.com)
- * @license     The MIT License (MIT)
- * @author [yangfeng]<feng.yang@dfrobot.com>
- * @version V1.0
- * @date 2021-05-13
- * @url  https://github.com/DFRobot/DFRobot_ICM42688
- */
 #include "icm_42688p.h"
+#ifdef TDK_ICM42688P__
 #include "math.h"
 #include <zephyr/kernel.h>
 
@@ -781,3 +772,5 @@ float icm_42688_get_range_gyro()
 {
   return _gyroRange;
 }
+
+#endif

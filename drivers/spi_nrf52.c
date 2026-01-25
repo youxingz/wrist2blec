@@ -45,6 +45,8 @@ static inline void icm42688p_cs_unselect()
 
 int icm_42688_spi_init()
 {
+  // 需要上电后等待至少 200ms 才能读写寄存器
+  k_msleep(210);
   nrfx_spim_config_t spim_config = NRFX_SPIM_DEFAULT_CONFIG(
     PIN_SPI_CLK,
     PIN_SPI_MOSI,

@@ -93,7 +93,11 @@ int task_imu_start()
 {
   LOG_INF(">> [TASK/IMU] start.");
   // IMU: 500Hz
-  icm_42688_begin();
+  int err = icm_42688_begin();
+  if (err) {
+    printk("icm_42688_begin() error: %d\n", err);
+    return err;
+  }
   // icm_42688_set_odr_fsr(/* who= */GYRO,/* ODR= */ODR_500HZ, /* FSR = */FSR_0);
   // icm_42688_set_odr_fsr(/* who= */ALL,/* ODR= */ODR_500HZ, /* FSR = */FSR_0);
   icm_42688_set_odr_fsr(/* who= */ALL,/* ODR= */ODR_8KHZ, /* FSR = */FSR_3);

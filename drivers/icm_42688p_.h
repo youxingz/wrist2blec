@@ -1,7 +1,15 @@
-// #define TDK_ICM42688P__
-#define TOKMAS_ICM42688P__
+/*!
+ * @file DFRobot_ICM42688.h
+ * @brief Define the basic structure of DFRobot_ICM42688 class
+ * @copyright	Copyright (c) 2010 DFRobot Co.Ltd (http://www.dfrobot.com)
+ * @license     The MIT License (MIT)
+ * @author [yangfeng]<feng.yang@dfrobot.com>
+ * @version V1.0
+ * @date 2021-05-13
+ * @url  https://github.com/DFRobot/DFRobot_ICM42688
+ */
 
-#define ENABLE_IT
+// #define ENABLE_IT
 #if defined(ENABLE_IT)
 #ifndef __DFRobot_ICM42688_H
 #define __DFRobot_ICM42688_H
@@ -20,14 +28,14 @@
 
 #define DFRobot_ICM42688_I2C_L_ADDR 0x68 
 #define DFRobot_ICM42688_I2C_H_ADDR 0x69
-#define DFRobot_ICM42688_ID  0x05 
+#define DFRobot_ICM42688_ID  0x47 
 
-#define ICM42688_DEVICE_CONFIG         0x60
+#define ICM42688_DEVICE_CONFIG          0x11
 #define ICM42688_DRIVE_CONFIG           0x13
 
 #define ICM42688_SIGNAL_PATH_RESET      0x4B
 
-#define ICM42688_PWR_MGMT0             0x08
+#define ICM42688_PWR_MGMT0              0x4E
 
 #define ICM42688_INT_CONFIG             0x14
 #define ICM42688_INT_STATUS             0x2D
@@ -45,20 +53,20 @@
 #define ICM42688_INT_SOURCE9            0x50
 #define ICM42688_INT_SOURCE10           0x51
 
-#define ICM42688_TEMP_DATA1            0x33
-#define ICM42688_TEMP_DATA0            0x34
-#define ICM42688_ACCEL_DATA_X1         0x35
-#define ICM42688_ACCEL_DATA_X0         0x36
-#define ICM42688_ACCEL_DATA_Y1         0x37
-#define ICM42688_ACCEL_DATA_Y0         0x38
-#define ICM42688_ACCEL_DATA_Z1         0x39
-#define ICM42688_ACCEL_DATA_Z0         0x3A
-#define ICM42688_GYRO_DATA_X1          0x3B
-#define ICM42688_GYRO_DATA_X0          0x3C
-#define ICM42688_GYRO_DATA_Y1          0x3D
-#define ICM42688_GYRO_DATA_Y0          0x3E
-#define ICM42688_GYRO_DATA_Z1          0x3F
-#define ICM42688_GYRO_DATA_Z0          0x40
+#define ICM42688_TEMP_DATA1             0x1D
+#define ICM42688_TEMP_DATA0             0x1E
+#define ICM42688_ACCEL_DATA_X1          0x1F
+#define ICM42688_ACCEL_DATA_X0          0x20
+#define ICM42688_ACCEL_DATA_Y1          0x21
+#define ICM42688_ACCEL_DATA_Y0          0x22
+#define ICM42688_ACCEL_DATA_Z1          0x23
+#define ICM42688_ACCEL_DATA_Z0          0x24
+#define ICM42688_GYRO_DATA_X1           0x25
+#define ICM42688_GYRO_DATA_X0           0x26
+#define ICM42688_GYRO_DATA_Y1           0x27
+#define ICM42688_GYRO_DATA_Y0           0x28
+#define ICM42688_GYRO_DATA_Z1           0x29
+#define ICM42688_GYRO_DATA_Z0           0x30
 
 #define ICM42688_TMST_FSYNCH            0x43
 #define ICM42688_TMST_FSYNCL            0x44
@@ -75,9 +83,9 @@
 
 
     
-#define ICM42688_GYRO_CONFIG0          0x04
-#define ICM42688_ACCEL_CONFIG0         0x03
-#define ICM42688_GYRO_CONFIG1          0x06
+#define ICM42688_GYRO_CONFIG0           0x4F
+#define ICM42688_ACCEL_CONFIG0          0x50
+#define ICM42688_GYRO_CONFIG1           0x51
 #define ICM42688_GYRO_ACCEL_CONFIG0     0x52
 #define ICM42688_ACCEL_CONFIG1          0x53
     
@@ -102,8 +110,8 @@
     
 
 #define ICM42688_SELF_TEST_CONFIG       0x70
-#define ICM42688_WHO_AM_I              0x00
-#define ICM42688_REG_BANK_SEL          0x7F
+#define ICM42688_WHO_AM_I               0x75
+#define ICM42688_REG_BANK_SEL           0x76   
 #define ICM42688_SENSOR_CONFIG0         0x03
 
 
