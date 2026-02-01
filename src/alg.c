@@ -19,6 +19,19 @@ typedef struct {
   float integral_fb_x;
   float integral_fb_y;
   float integral_fb_z;
+  float ax_f;
+  float ay_f;
+  float az_f;
+  float gx_f;
+  float gy_f;
+  float gz_f;
+  float mx_f;
+  float my_f;
+  float mz_f;
+  bool filter_valid;
+  float abx;
+  float aby;
+  float abz;
   world_pos_t current;
   bool valid;
 } alg_state_t;
@@ -41,6 +54,39 @@ static inline float inv_sqrt(float x)
     return 0.0f;
   }
   return 1.0f / sqrtf(x);
+}
+
+static inline float norm3(float x, float y, float z)
+{
+  return sqrtf(x * x + y * y + z * z);
+}
+
+static inline float lpf_update(float prev, float input, float alpha)
+{
+  return prev + alpha * (input - prev);
+}
+
+static inline float angle_diff_deg(float a, float b)
+{
+  float d = a - b;
+  while (d > 180.0f) {
+    d -= 360.0f;
+  }
+  while (d < -180.0f) {
+    d += 360.0f;
+  }
+  return d;
+}
+
+static inline void gravity_body_from_quat(const alg_state_t *st, float *gx, float *gy, float *gz)
+{
+  float q0 = st->q0;
+  float q1 = st->q1;
+  float q2 = st->q2;
+  float q3 = st->q3;
+  *gx = 2.0f * (q1 * q3 - q0 * q2);
+  *gy = 2.0f * (q0 * q1 + q2 * q3);
+  *gz = q0 * q0 - q1 * q1 - q2 * q2 + q3 * q3;
 }
 
 static inline bool normalize3(float *x, float *y, float *z)
@@ -221,7 +267,7 @@ int alg_imu_init(alg_config_t cfg)
   if (cfg.sample_us == 0) {
     cfg.sample_us = 2000; // 默认 500Hz
   }
-  config.sample_us = cfg.sample_us;
+  config = cfg;
 
   memset(&state, 0, sizeof(state));
   state.q0 = 1.0f;
@@ -248,31 +294,111 @@ int alg_imu_update(imu_data_t * data)
   float my = data->my;
   float mz = data->mz;
 
+  float dt = (float)config.sample_us / 1000000.0f;
+  if (!isfinite(dt) || dt <= 0.0f) {
+    dt = 0.002f;
+  }
+
+  // 简单一阶低通，抑制高频抖动噪声
+  // 截止频率可按实际噪声/响应再调整
+  const float acc_cutoff_hz = 10.0f;
+  const float gyro_cutoff_hz = 20.0f;
+  const float mag_cutoff_hz = 10.0f;
+  const float tau_acc = 1.0f / (2.0f * (float)M_PI * acc_cutoff_hz);
+  const float tau_gyro = 1.0f / (2.0f * (float)M_PI * gyro_cutoff_hz);
+  const float tau_mag = 1.0f / (2.0f * (float)M_PI * mag_cutoff_hz);
+  const float alpha_acc = dt / (tau_acc + dt);
+  const float alpha_gyro = dt / (tau_gyro + dt);
+  const float alpha_mag = dt / (tau_mag + dt);
+
+  if (!state.filter_valid) {
+    state.ax_f = ax;
+    state.ay_f = ay;
+    state.az_f = az;
+    state.gx_f = gx;
+    state.gy_f = gy;
+    state.gz_f = gz;
+    state.mx_f = mx;
+    state.my_f = my;
+    state.mz_f = mz;
+    state.filter_valid = true;
+  } else {
+    if (is_finite3(ax, ay, az)) {
+      state.ax_f = lpf_update(state.ax_f, ax, alpha_acc);
+      state.ay_f = lpf_update(state.ay_f, ay, alpha_acc);
+      state.az_f = lpf_update(state.az_f, az, alpha_acc);
+    }
+    if (is_finite3(gx, gy, gz)) {
+      state.gx_f = lpf_update(state.gx_f, gx, alpha_gyro);
+      state.gy_f = lpf_update(state.gy_f, gy, alpha_gyro);
+      state.gz_f = lpf_update(state.gz_f, gz, alpha_gyro);
+    }
+    if (is_finite3(mx, my, mz)) {
+      state.mx_f = lpf_update(state.mx_f, mx, alpha_mag);
+      state.my_f = lpf_update(state.my_f, my, alpha_mag);
+      state.mz_f = lpf_update(state.mz_f, mz, alpha_mag);
+    }
+  }
+
+  ax = state.ax_f;
+  ay = state.ay_f;
+  az = state.az_f;
+  gx = state.gx_f;
+  gy = state.gy_f;
+  gz = state.gz_f;
+  mx = state.mx_f;
+  my = state.my_f;
+  mz = state.mz_f;
+
+  // 角速度幅值（dps），用于静止检测
+  float gyro_norm_dps = norm3(gx, gy, gz);
+
   // 输入单位假设：加速度 mg，角速度 dps（来自驱动配置）
   const float deg2rad = 0.01745329252f;
   gx *= deg2rad;
   gy *= deg2rad;
   gz *= deg2rad;
 
-  float dt = (float)config.sample_us / 1000000.0f;
-  if (!isfinite(dt) || dt <= 0.0f) {
-    dt = 0.002f;
-  }
-
   mahony_update(&state, gx, gy, gz, ax, ay, az, mx, my, mz, dt);
 
-  // 世界坐标线加速度（单位：mg），去除重力分量
-  float wx, wy, wz;
-  rotate_body_to_world(&state, ax, ay, az, &wx, &wy, &wz);
-  const float g_ref = 1000.0f;
-  wx -= 0.0f;
-  wy -= 0.0f;
-  wz -= g_ref;
+  // 线加速度（m/s^2），机体坐标系，去除重力分量
+  const float g_ref_mg = 1000.0f;
+  const float mg_to_mps2 = 0.00980665f;
+  float gbx, gby, gbz;
+  gravity_body_from_quat(&state, &gbx, &gby, &gbz);
+  float lin_bx_mg = ax - gbx * g_ref_mg;
+  float lin_by_mg = ay - gby * g_ref_mg;
+  float lin_bz_mg = az - gbz * g_ref_mg;
+  float lin_bx = lin_bx_mg * mg_to_mps2;
+  float lin_by = lin_by_mg * mg_to_mps2;
+  float lin_bz = lin_bz_mg * mg_to_mps2;
+
+  // 简单零偏估计：静止时用低通估计线加速度偏置
+  const float gyro_stationary_dps = 1.5f;
+  const float lin_acc_stationary = 0.2f; // m/s^2
+  const float acc_norm_stationary_mg = 50.0f;
+  float acc_norm_mg = norm3(ax, ay, az);
+  bool stationary = (gyro_norm_dps < gyro_stationary_dps) &&
+                    (fabsf(acc_norm_mg - g_ref_mg) < acc_norm_stationary_mg) &&
+                    (norm3(lin_bx, lin_by, lin_bz) < lin_acc_stationary);
+
+  if (stationary && is_finite3(lin_bx, lin_by, lin_bz)) {
+    const float bias_alpha = 0.01f;
+    state.abx = lpf_update(state.abx, lin_bx, bias_alpha);
+    state.aby = lpf_update(state.aby, lin_by, bias_alpha);
+    state.abz = lpf_update(state.abz, lin_bz, bias_alpha);
+  }
+
+  // 去除估计偏置
+  lin_bx -= state.abx;
+  lin_by -= state.aby;
+  lin_bz -= state.abz;
+
+  state.current.ax = lin_bx;
+  state.current.ay = lin_by;
+  state.current.az = lin_bz;
 
   quat_to_euler(&state, &state.current.yaw, &state.current.pitch, &state.current.roll);
-  state.current.x = wx;
-  state.current.y = wy;
-  state.current.z = wz;
   state.valid = true;
 
   // if return 0, call: #alg_imu_get_current/1
@@ -292,4 +418,40 @@ int alg_imu_get_current(world_pos_t * position)
   }
   *position = state.current;
   return 0;
+}
+
+bool alg_imu_is_yaw_balanced(void)
+{
+  if (!state.valid) {
+    return false;
+  }
+  if (config.balance_yaw_thresh < 0.0f) {
+    return true;
+  }
+  float dy = angle_diff_deg(state.current.yaw, config.balance_yaw);
+  return fabsf(dy) <= config.balance_yaw_thresh;
+}
+
+bool alg_imu_is_pitch_balanced(void)
+{
+  if (!state.valid) {
+    return false;
+  }
+  if (config.balance_pitch_thresh < 0.0f) {
+    return true;
+  }
+  float dp = angle_diff_deg(state.current.pitch, config.balance_pitch);
+  return fabsf(dp) <= config.balance_pitch_thresh;
+}
+
+bool alg_imu_is_roll_balanced(void)
+{
+  if (!state.valid) {
+    return false;
+  }
+  if (config.balance_roll_thresh < 0.0f) {
+    return true;
+  }
+  float dr = angle_diff_deg(state.current.roll, config.balance_roll);
+  return fabsf(dr) <= config.balance_roll_thresh;
 }

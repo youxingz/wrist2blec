@@ -15,9 +15,9 @@ typedef struct {
 
 typedef struct {
   // float temperature;
-  float x;
-  float y;
-  float z;
+  float ax;
+  float ay;
+  float az;
   float yaw;
   float pitch;
   float roll;

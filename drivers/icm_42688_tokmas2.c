@@ -48,7 +48,7 @@ static uint8_t _ctrl7; /* enable */
 
 /* ----------------------------- helpers ----------------------------- */
 
-static inline int16_t s16_from_hl(uint8_t h, uint8_t l)
+static inline int16_t s16_from_hl(uint8_t l, uint8_t h)
 {
   return (int16_t)((uint16_t)h << 8 | (uint16_t)l);
 }

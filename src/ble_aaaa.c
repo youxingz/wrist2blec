@@ -24,12 +24,6 @@ LOG_MODULE_REGISTER(aaaa, LOG_LEVEL_INF);
 // SERVICE: AAAA
 struct bt_uuid_128 aaaa_service_uuid = BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x0000AAAA, 0x0000, 0x1000, 0x8000, 0x00805f9b34fb));
 
-// EMG/ECG/EOG/EEG Characteristics
-//// AAF0: READ STATE
-struct bt_uuid_128 aaf0_char_uuid = BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x0000AAF0, 0x0000, 0x1000, 0x8000, 0x00805f9b34fb));
-//// AAFF: STREAM
-struct bt_uuid_128 aaff_char_uuid = BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x0000AAFF, 0x0000, 0x1000, 0x8000, 0x00805f9b34fb));
-
 // IMU/MAG Characteristics
 //// AAE0: READ STATE
 struct bt_uuid_128 aae0_char_uuid = BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x0000AAE0, 0x0000, 0x1000, 0x8000, 0x00805f9b34fb));

@@ -2,10 +2,15 @@
 
 #include "inc/ble.h"
 #include "inc/task_imu.h"
+#include "inc/pba.h"
 
 
 int main(void)
 {
+  pba_init();
+
+  // 初始化
+
   ble_init();
   task_imu_init();
 

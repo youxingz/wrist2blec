@@ -4,6 +4,7 @@
 #include "../drivers/lis3mdl.h"
 #include "inc/alg.h"
 #include "inc/ble_aaaa.h"
+#include "inc/pba.h"
 
 #include <nrfx_timer.h>
 
@@ -70,6 +71,12 @@ int task_imu_init()
   // alg
   alg_config_t alg_config = {
     .sample_us = SAMPLE_TIME_MS * 1000, // 2ms
+    .balance_yaw = 0.0f,
+    .balance_pitch = 0.0f,
+    .balance_roll = -90.0f,
+    .balance_yaw_thresh = -1.0f,
+    .balance_pitch_thresh = -1.0f,
+    .balance_roll_thresh = 10.0f,
   };
   err = alg_imu_init(alg_config);
   if (err) {
@@ -208,9 +215,9 @@ static int convert2buf(uint16_t index, imu_data_t * imu, world_pos_t * position,
   buf[i++] = (temperature >> 8) & 0xFF;
   buf[i++] = temperature & 0xFF;
   // position:
-  int16_t x = (int16_t)(position->x * 100);
-  int16_t y = (int16_t)(position->y * 100);
-  int16_t z = (int16_t)(position->z * 100);
+  int16_t x = (int16_t)(position->ax * 100);
+  int16_t y = (int16_t)(position->ay * 100);
+  int16_t z = (int16_t)(position->az * 100);
   int16_t yaw = (int16_t)(position->yaw * 100);
   int16_t pitch = (int16_t)(position->pitch * 100);
   int16_t roll = (int16_t)(position->roll * 100);
@@ -273,6 +280,11 @@ static void looper_work_handler(struct k_work *work)
       // do nothing.
       break;
     }
+
+    bool is_roll_balanced = alg_imu_is_roll_balanced();
+
+    // 亮灯
+    pba_motor_front_en(!is_roll_balanced);
 
     // if BLE enabled, commit to GATT.
     // size: 2 + (1 + 9 + 6) * 2 = 34 bytes
