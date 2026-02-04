@@ -2,6 +2,7 @@
 #define BLE_AAAA_AAE_IMU_C__
 
 #include "inc/ble_aaaa_priv.h"
+#include "inc/storage.h"
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(AAE, LOG_LEVEL_INF);
 
@@ -57,6 +58,39 @@ ssize_t ble_on_aae0_write_request(struct bt_conn *conn, const struct bt_gatt_att
   uint8_t * data = (uint8_t *)buf;
   uint16_t request_id = (uint16_t)(data[0] << 8) | (data[1] & 0xFF);
   uint8_t method = data[2] & 0xFF;
+
+  if (method == 0x02) {
+    if (len < 5) {
+      LOG_INF("cmd 0x02 payload too short, req: %u", request_id);
+      return len;
+    }
+
+    uint8_t axis = data[3] & 0xFF;
+    uint8_t threshold = data[4] & 0xFF;
+    const char *axis_name = NULL;
+
+    switch (axis) {
+      case 0x01:
+        axis_name = "yaw";
+        break;
+      case 0x02:
+        axis_name = "pitch";
+        break;
+      case 0x03:
+        axis_name = "roll";
+        break;
+      default:
+        LOG_INF("cmd 0x02 invalid axis: 0x%02x", axis);
+        return len;
+    }
+
+    int err = storage_upsert(axis, threshold);
+    if (err < 0) {
+      LOG_INF("cmd 0x02 storage write failed (err %d)", err);
+    } else {
+      LOG_INF("cmd 0x02 saved %s threshold: %u", axis_name, threshold);
+    }
+  }
 
   return len;
 }
