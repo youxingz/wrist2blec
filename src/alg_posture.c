@@ -1,4 +1,5 @@
 #include "inc/alg_posture.h"
+#include "inc/alg_position.h"
 
 #include <errno.h>
 #include <math.h>
@@ -32,6 +33,9 @@ typedef struct {
   float abx;
   float aby;
   float abz;
+  float gbx;
+  float gby;
+  float gbz;
   world_posture_t current;
   bool valid;
 } alg_state_t;
@@ -41,6 +45,26 @@ static alg_state_t state = {
   .q1 = 0.0f,
   .q2 = 0.0f,
   .q3 = 0.0f,
+};
+
+typedef struct {
+  float x;
+  float y;
+  float z;
+  float vx;
+  float vy;
+  float vz;
+  float bx;
+  float by;
+  float bz;
+  float g_ref_mg;
+  world_posture_t last;
+  bool valid;
+} pos_state_t;
+
+static pos_state_t pos_state = {
+  // 使用 mg 作为加速度输入单位：1 g = 1000 mg
+  .g_ref_mg = 1000.0f,
 };
 
 static inline bool is_finite3(float x, float y, float z)
@@ -362,13 +386,13 @@ world_posture_t alg_posture_update(imu_data_t * data)
   mahony_update(&state, gx, gy, gz, ax, ay, az, mx, my, mz, dt);
 
   // 线加速度（m/s^2），机体坐标系，去除重力分量
+  // gravity_body_from_quat 输出的是“重力方向（单位向量）”，先保存供位置解算复用
   const float g_ref_mg = 1000.0f;
   const float mg_to_mps2 = 0.00980665f;
-  float gbx, gby, gbz;
-  gravity_body_from_quat(&state, &gbx, &gby, &gbz);
-  float lin_bx_mg = ax - gbx * g_ref_mg;
-  float lin_by_mg = ay - gby * g_ref_mg;
-  float lin_bz_mg = az - gbz * g_ref_mg;
+  gravity_body_from_quat(&state, &state.gbx, &state.gby, &state.gbz);
+  float lin_bx_mg = ax - state.gbx * g_ref_mg;
+  float lin_by_mg = ay - state.gby * g_ref_mg;
+  float lin_bz_mg = az - state.gbz * g_ref_mg;
   float lin_bx = lin_bx_mg * mg_to_mps2;
   float lin_by = lin_by_mg * mg_to_mps2;
   float lin_bz = lin_bz_mg * mg_to_mps2;
@@ -402,6 +426,123 @@ world_posture_t alg_posture_update(imu_data_t * data)
   state.valid = true;
 
   return state.current;
+}
+
+world_position_t alg_position_update(const world_posture_t *posture,
+                                     const imu_data_t *imu)
+{
+  // 位置解算流程（基于原始加速度 + 四元数姿态）：
+  // 1) 使用姿态四元数将“原始 IMU 加速度”从机体坐标系旋转到世界坐标系
+  // 2) 在世界坐标系去掉重力分量，得到线加速度
+  // 3) 静止检测时估计偏置并清零速度，抑制积分漂移
+  // 4) 积分得到速度与位置（只作为短时间相对位移参考）
+  //
+  // 重要：加速度输入单位为 mg（1 g = 1000 mg）。
+  // 这里先在 mg 单位下做旋转和去重力，再统一换算到 m/s^2。
+  world_position_t out = {
+    .x = pos_state.x,
+    .y = pos_state.y,
+    .z = pos_state.z,
+    .yaw = pos_state.last.yaw,
+    .pitch = pos_state.last.pitch,
+    .roll = pos_state.last.roll,
+  };
+
+  if (!posture || !imu) {
+    return out;
+  }
+
+  world_posture_t posture_val = *posture;
+  out.yaw = posture_val.yaw;
+  out.pitch = posture_val.pitch;
+  out.roll = posture_val.roll;
+
+  if (!pos_state.valid) {
+    pos_state.last = posture_val;
+    pos_state.valid = true;
+    return out;
+  }
+
+  float dt = (float)ALG_POSITION_SAMPLE_US / 1000000.0f;
+  if (!isfinite(dt) || dt <= 0.0f) {
+    dt = 0.01f;
+  }
+
+  // 原始 IMU 加速度（mg）
+  float ax_mg = imu->ax;
+  float ay_mg = imu->ay;
+  float az_mg = imu->az;
+  if (!isfinite(ax_mg) || !isfinite(ay_mg) || !isfinite(az_mg)) {
+    return out;
+  }
+
+  // 先在机体系去重力，再用四元数旋转到世界坐标系，避免对“世界重力方向”作假设
+  // 重力方向来自 posture 的四元数（state.gbx/gby/gbz 为单位向量）
+  float lin_bx_mg = ax_mg - state.gbx * pos_state.g_ref_mg;
+  float lin_by_mg = ay_mg - state.gby * pos_state.g_ref_mg;
+  float lin_bz_mg = az_mg - state.gbz * pos_state.g_ref_mg;
+
+  // 将机体系“线加速度（mg）”旋转到世界坐标系（使用姿态四元数）
+  float lin_wx_mg, lin_wy_mg, lin_wz_mg;
+  rotate_body_to_world(&state, lin_bx_mg, lin_by_mg, lin_bz_mg,
+                       &lin_wx_mg, &lin_wy_mg, &lin_wz_mg);
+
+  // 统一换算到 m/s^2，避免后续阈值与积分混乱
+  const float mg_to_mps2 = 0.00980665f;
+  float lin_wx = lin_wx_mg * mg_to_mps2;
+  float lin_wy = lin_wy_mg * mg_to_mps2;
+  float lin_wz = lin_wz_mg * mg_to_mps2;
+
+  float dy = angle_diff_deg(posture_val.yaw, pos_state.last.yaw);
+  float dp = angle_diff_deg(posture_val.pitch, pos_state.last.pitch);
+  float dr = angle_diff_deg(posture_val.roll, pos_state.last.roll);
+  float max_d = fmaxf(fmaxf(fabsf(dy), fabsf(dp)), fabsf(dr));
+  float lin_norm = norm3(lin_wx, lin_wy, lin_wz);
+
+  // 静止检测：角度变化小 + 线加速度小
+  const float stationary_angle_deg = 1.0f;
+  const float stationary_lin_mps2 = 0.2f;
+  bool stationary = (max_d < stationary_angle_deg) && (lin_norm < stationary_lin_mps2);
+
+  if (stationary) {
+    // 静止时低通估计偏置，抑制积分漂移
+    const float bias_alpha = 0.02f;
+    pos_state.bx = lpf_update(pos_state.bx, lin_wx, bias_alpha);
+    pos_state.by = lpf_update(pos_state.by, lin_wy, bias_alpha);
+    pos_state.bz = lpf_update(pos_state.bz, lin_wz, bias_alpha);
+    pos_state.vx = 0.0f;
+    pos_state.vy = 0.0f;
+    pos_state.vz = 0.0f;
+
+    // 静止时轻微修正 g 参考值（单位 mg），用于抵消量程误差
+    float acc_norm_mg = norm3(ax_mg, ay_mg, az_mg);
+    if (isfinite(acc_norm_mg)) {
+      const float g_alpha = 0.01f;
+      pos_state.g_ref_mg = lpf_update(pos_state.g_ref_mg, acc_norm_mg, g_alpha);
+    }
+  }
+
+  // 去除静止偏置后再积分
+  lin_wx -= pos_state.bx;
+  lin_wy -= pos_state.by;
+  lin_wz -= pos_state.bz;
+
+  // 速度积分
+  pos_state.vx += lin_wx * dt;
+  pos_state.vy += lin_wy * dt;
+  pos_state.vz += lin_wz * dt;
+
+  // 位置积分
+  pos_state.x += pos_state.vx * dt;
+  pos_state.y += pos_state.vy * dt;
+  pos_state.z += pos_state.vz * dt;
+
+  pos_state.last = posture_val;
+
+  out.x = pos_state.x;
+  out.y = pos_state.y;
+  out.z = pos_state.z;
+  return out;
 }
 
 bool alg_posture_is_yaw_balanced(void)
