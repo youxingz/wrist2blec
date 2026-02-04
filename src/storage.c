@@ -69,3 +69,27 @@ int storage_upsert(uint16_t key, uint8_t value)
 
 	return 0;
 }
+
+int storage_read(uint16_t key, uint8_t *value)
+{
+	if (!value) {
+		return -EINVAL;
+	}
+
+	int err = storage_init();
+	if (err) {
+		return err;
+	}
+
+	uint8_t tmp = 0;
+	ssize_t len = nvs_read(&aae_nvs, key, &tmp, sizeof(tmp));
+	if (len < 0) {
+		return (int)len;
+	}
+	if (len != sizeof(tmp)) {
+		return -EIO;
+	}
+
+	*value = tmp;
+	return 0;
+}

@@ -5,6 +5,7 @@
 #include "inc/alg.h"
 #include "inc/ble_aaaa.h"
 #include "inc/pba.h"
+#include "inc/storage.h"
 
 #include <nrfx_timer.h>
 
@@ -78,6 +79,17 @@ int task_imu_init()
     .balance_pitch_thresh = -1.0f,
     .balance_roll_thresh = 10.0f,
   };
+  uint8_t thresh = 0;
+  if (storage_read(ALG_AXIS_YAW, &thresh) == 0) {
+    alg_config.balance_yaw_thresh = (float)thresh;
+  }
+  if (storage_read(ALG_AXIS_PITCH, &thresh) == 0) {
+    alg_config.balance_pitch_thresh = (float)thresh;
+  }
+  if (storage_read(ALG_AXIS_ROLL, &thresh) == 0) {
+    alg_config.balance_roll_thresh = (float)thresh;
+  }
+
   err = alg_imu_init(alg_config);
   if (err) {
     LOG_INF("Alg init error: %d", err);

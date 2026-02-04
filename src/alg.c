@@ -455,3 +455,22 @@ bool alg_imu_is_roll_balanced(void)
   float dr = angle_diff_deg(state.current.roll, config.balance_roll);
   return fabsf(dr) <= config.balance_roll_thresh;
 }
+
+int alg_update_threshold(uint8_t axis, float threshold_deg)
+{
+  switch (axis) {
+    case ALG_AXIS_YAW:
+      config.balance_yaw_thresh = threshold_deg;
+      break;
+    case ALG_AXIS_PITCH:
+      config.balance_pitch_thresh = threshold_deg;
+      break;
+    case ALG_AXIS_ROLL:
+      config.balance_roll_thresh = threshold_deg;
+      break;
+    default:
+      return -EINVAL;
+  }
+
+  return 0;
+}
