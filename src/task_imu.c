@@ -72,7 +72,7 @@ int task_imu_init()
   
   // alg
   alg_posture_config_t posture_config = {
-    .sample_us = SAMPLE_TIME_MS * 1000, // 2ms
+    .sample_us = SAMPLE_TIME_MS * 1000, // 10ms
     .balance_yaw = 0.0f,
     .balance_pitch = 0.0f,
     .balance_roll = -90.0f,

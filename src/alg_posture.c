@@ -1,3 +1,6 @@
+// #define ENABLE_IT
+#ifdef ENABLE_IT
+
 #include "inc/alg_posture.h"
 #include "inc/alg_position.h"
 
@@ -599,3 +602,5 @@ int alg_posture_update_threshold(uint8_t axis, float threshold_deg)
 
   return 0;
 }
+
+#endif
