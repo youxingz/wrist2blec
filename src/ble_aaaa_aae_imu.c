@@ -3,7 +3,7 @@
 
 #include "inc/ble_aaaa_priv.h"
 #include "inc/storage.h"
-#include "inc/alg.h"
+#include "inc/alg_posture.h"
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(AAE, LOG_LEVEL_INF);
 
@@ -71,13 +71,13 @@ ssize_t ble_on_aae0_write_request(struct bt_conn *conn, const struct bt_gatt_att
     const char *axis_name = NULL;
 
     switch (axis) {
-      case ALG_AXIS_YAW:
+      case ALG_POSTURE_AXIS_YAW:
         axis_name = "yaw";
         break;
-      case ALG_AXIS_PITCH:
+      case ALG_POSTURE_AXIS_PITCH:
         axis_name = "pitch";
         break;
-      case ALG_AXIS_ROLL:
+      case ALG_POSTURE_AXIS_ROLL:
         axis_name = "roll";
         break;
       default:
@@ -92,7 +92,7 @@ ssize_t ble_on_aae0_write_request(struct bt_conn *conn, const struct bt_gatt_att
       LOG_INF("cmd 0x02 saved %s threshold: %u", axis_name, threshold);
     }
 
-    int alg_err = alg_update_threshold(axis, (float)threshold);
+    int alg_err = alg_posture_update_threshold(axis, (float)threshold);
     if (alg_err < 0) {
       LOG_INF("cmd 0x02 alg update failed (err %d)", alg_err);
     }

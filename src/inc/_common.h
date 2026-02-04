@@ -21,4 +21,13 @@ typedef struct {
   float yaw;
   float pitch;
   float roll;
-} world_pos_t;
+} world_posture_t;
+
+typedef struct {
+  float x;
+  float y;
+  float z;
+  float yaw;
+  float pitch;
+  float roll;
+} world_position_t;

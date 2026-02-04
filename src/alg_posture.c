@@ -1,4 +1,4 @@
-#include "inc/alg.h"
+#include "inc/alg_posture.h"
 
 #include <errno.h>
 #include <math.h>
@@ -9,7 +9,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-static volatile alg_config_t config;
+static volatile alg_posture_config_t posture_config;
 
 typedef struct {
   float q0;
@@ -32,7 +32,7 @@ typedef struct {
   float abx;
   float aby;
   float abz;
-  world_pos_t current;
+  world_posture_t current;
   bool valid;
 } alg_state_t;
 
@@ -262,12 +262,12 @@ static void mahony_update(alg_state_t *st,
   quat_normalize(st);
 }
 
-int alg_imu_init(alg_config_t cfg)
+int alg_posture_init(alg_posture_config_t cfg)
 {
   if (cfg.sample_us == 0) {
     cfg.sample_us = 2000; // 默认 500Hz
   }
-  config = cfg;
+  posture_config = cfg;
 
   memset(&state, 0, sizeof(state));
   state.q0 = 1.0f;
@@ -278,10 +278,10 @@ int alg_imu_init(alg_config_t cfg)
 /**
  * 以固定频率采集并更新至此
  */
-int alg_imu_update(imu_data_t * data)
+world_posture_t alg_posture_update(imu_data_t * data)
 {
   if (!data) {
-    return -EINVAL;
+    return state.current;
   }
 
   float ax = data->ax;
@@ -294,7 +294,7 @@ int alg_imu_update(imu_data_t * data)
   float my = data->my;
   float mz = data->mz;
 
-  float dt = (float)config.sample_us / 1000000.0f;
+  float dt = (float)posture_config.sample_us / 1000000.0f;
   if (!isfinite(dt) || dt <= 0.0f) {
     dt = 0.002f;
   }
@@ -401,72 +401,56 @@ int alg_imu_update(imu_data_t * data)
   quat_to_euler(&state, &state.current.yaw, &state.current.pitch, &state.current.roll);
   state.valid = true;
 
-  // if return 0, call: #alg_imu_get_current/1
-  return 0;
+  return state.current;
 }
 
-/**
- * 获取解算出来的最新姿势（世界坐标）
- */
-int alg_imu_get_current(world_pos_t * position)
-{
-  if (!position) {
-    return -EINVAL;
-  }
-  if (!state.valid) {
-    return -EAGAIN;
-  }
-  *position = state.current;
-  return 0;
-}
-
-bool alg_imu_is_yaw_balanced(void)
+bool alg_posture_is_yaw_balanced(void)
 {
   if (!state.valid) {
     return false;
   }
-  if (config.balance_yaw_thresh < 0.0f) {
+  if (posture_config.balance_yaw_thresh < 0.0f) {
     return true;
   }
-  float dy = angle_diff_deg(state.current.yaw, config.balance_yaw);
-  return fabsf(dy) <= config.balance_yaw_thresh;
+  float dy = angle_diff_deg(state.current.yaw, posture_config.balance_yaw);
+  return fabsf(dy) <= posture_config.balance_yaw_thresh;
 }
 
-bool alg_imu_is_pitch_balanced(void)
+bool alg_posture_is_pitch_balanced(void)
 {
   if (!state.valid) {
     return false;
   }
-  if (config.balance_pitch_thresh < 0.0f) {
+  if (posture_config.balance_pitch_thresh < 0.0f) {
     return true;
   }
-  float dp = angle_diff_deg(state.current.pitch, config.balance_pitch);
-  return fabsf(dp) <= config.balance_pitch_thresh;
+  float dp = angle_diff_deg(state.current.pitch, posture_config.balance_pitch);
+  return fabsf(dp) <= posture_config.balance_pitch_thresh;
 }
 
-bool alg_imu_is_roll_balanced(void)
+bool alg_posture_is_roll_balanced(void)
 {
   if (!state.valid) {
     return false;
   }
-  if (config.balance_roll_thresh < 0.0f) {
+  if (posture_config.balance_roll_thresh < 0.0f) {
     return true;
   }
-  float dr = angle_diff_deg(state.current.roll, config.balance_roll);
-  return fabsf(dr) <= config.balance_roll_thresh;
+  float dr = angle_diff_deg(state.current.roll, posture_config.balance_roll);
+  return fabsf(dr) <= posture_config.balance_roll_thresh;
 }
 
-int alg_update_threshold(uint8_t axis, float threshold_deg)
+int alg_posture_update_threshold(uint8_t axis, float threshold_deg)
 {
   switch (axis) {
-    case ALG_AXIS_YAW:
-      config.balance_yaw_thresh = threshold_deg;
+    case ALG_POSTURE_AXIS_YAW:
+      posture_config.balance_yaw_thresh = threshold_deg;
       break;
-    case ALG_AXIS_PITCH:
-      config.balance_pitch_thresh = threshold_deg;
+    case ALG_POSTURE_AXIS_PITCH:
+      posture_config.balance_pitch_thresh = threshold_deg;
       break;
-    case ALG_AXIS_ROLL:
-      config.balance_roll_thresh = threshold_deg;
+    case ALG_POSTURE_AXIS_ROLL:
+      posture_config.balance_roll_thresh = threshold_deg;
       break;
     default:
       return -EINVAL;

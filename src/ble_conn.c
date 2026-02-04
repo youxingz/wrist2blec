@@ -1,6 +1,7 @@
 #include "inc/ble_conn.h"
 
 #include <zephyr/kernel.h>
+#include <errno.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/hci.h>
 #include <zephyr/bluetooth/conn.h>
@@ -14,6 +15,9 @@ LOG_MODULE_REGISTER(blec, LOG_LEVEL_INF);
 #define DEVICE_NAME_LEN (sizeof(DEVICE_NAME) - 1)
 
 static volatile bool device_connected = false;
+
+static void adv_restart_work_handler(struct k_work *work);
+K_WORK_DELAYABLE_DEFINE(adv_restart_work, adv_restart_work_handler);
 
 /* Advertising data (ADV) */
 static const struct bt_data ad[] = {
@@ -39,7 +43,11 @@ static void connected(struct bt_conn *conn, uint8_t conn_err)
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
 	if (conn_err) {
+		printk("ble_conn: connect failed (err %u)\n", conn_err);
 		LOG_INF("Connection failed (err %u)\n", conn_err);
+		device_connected = false;
+		/* 连接失败后，确保广播重新起来（延迟重试） */
+		k_work_schedule(&adv_restart_work, K_MSEC(200));
 		return;
 	}
 
@@ -60,20 +68,24 @@ static void connected(struct bt_conn *conn, uint8_t conn_err)
 
 		LOG_INF("Connected: %s, tx_phy %u, rx_phy %u\n",
 			addr, phy_info->tx_phy, phy_info->rx_phy);
+		printk("ble_conn: connected %s, tx_phy %u, rx_phy %u\n",
+		       addr, phy_info->tx_phy, phy_info->rx_phy);
 	} else {
 		LOG_INF("Connected: %s (non-LE?)\n", addr);
+		printk("ble_conn: connected %s (non-LE?)\n", addr);
 	}
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
 	LOG_INF("Disconnected (reason 0x%02x)\n", reason);
+	printk("ble_conn: disconnected (reason 0x%02x)\n", reason);
 
 	if (device_connected) {
 		device_connected = false;
-		/* start adv again */
-		ble_adv_start();
 	}
+	/* start adv again (delay to avoid -EAGAIN) */
+	k_work_schedule(&adv_restart_work, K_MSEC(200));
 }
 
 /* Define connection callback */
@@ -117,4 +129,21 @@ int ble_adv_init(void)
 {
 	/* 你这里目前没做额外初始化，保持原样 */
 	return 0;
+}
+
+static void adv_restart_work_handler(struct k_work *work)
+{
+	int err = ble_adv_start();
+
+	if (err == -EALREADY) {
+		LOG_INF("Advertiser already active\n");
+		printk("ble_conn: adv already active\n");
+		return;
+	}
+
+	if (err) {
+		LOG_INF("Advertiser restart failed (err %d), retry\n", err);
+		printk("ble_conn: adv restart failed (err %d), retry\n", err);
+		k_work_schedule(&adv_restart_work, K_MSEC(200));
+	}
 }

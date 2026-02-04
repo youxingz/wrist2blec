@@ -2,7 +2,8 @@
 
 #include "../drivers/icm_42688p.h"
 #include "../drivers/lis3mdl.h"
-#include "inc/alg.h"
+#include "inc/alg_posture.h"
+#include "inc/alg_position.h"
 #include "inc/ble_aaaa.h"
 #include "inc/pba.h"
 #include "inc/storage.h"
@@ -70,7 +71,7 @@ int task_imu_init()
   LOG_INF("[IMU] init successfully.");
   
   // alg
-  alg_config_t alg_config = {
+  alg_posture_config_t posture_config = {
     .sample_us = SAMPLE_TIME_MS * 1000, // 2ms
     .balance_yaw = 0.0f,
     .balance_pitch = 0.0f,
@@ -80,17 +81,17 @@ int task_imu_init()
     .balance_roll_thresh = 10.0f,
   };
   uint8_t thresh = 0;
-  if (storage_read(ALG_AXIS_YAW, &thresh) == 0) {
-    alg_config.balance_yaw_thresh = (float)thresh;
+  if (storage_read(ALG_POSTURE_AXIS_YAW, &thresh) == 0) {
+    posture_config.balance_yaw_thresh = (float)thresh;
   }
-  if (storage_read(ALG_AXIS_PITCH, &thresh) == 0) {
-    alg_config.balance_pitch_thresh = (float)thresh;
+  if (storage_read(ALG_POSTURE_AXIS_PITCH, &thresh) == 0) {
+    posture_config.balance_pitch_thresh = (float)thresh;
   }
-  if (storage_read(ALG_AXIS_ROLL, &thresh) == 0) {
-    alg_config.balance_roll_thresh = (float)thresh;
+  if (storage_read(ALG_POSTURE_AXIS_ROLL, &thresh) == 0) {
+    posture_config.balance_roll_thresh = (float)thresh;
   }
 
-  err = alg_imu_init(alg_config);
+  err = alg_posture_init(posture_config);
   if (err) {
     LOG_INF("Alg init error: %d", err);
   }
@@ -189,7 +190,7 @@ static int worker_init()
 }
 
 // helper func:
-static int convert2buf(uint16_t index, imu_data_t * imu, world_pos_t * position, uint8_t * buf)
+static int convert2buf(uint16_t index, imu_data_t * imu, world_position_t * position, uint8_t * buf)
 {
   // ts:
   int i = 0;
@@ -227,9 +228,9 @@ static int convert2buf(uint16_t index, imu_data_t * imu, world_pos_t * position,
   buf[i++] = (temperature >> 8) & 0xFF;
   buf[i++] = temperature & 0xFF;
   // position:
-  int16_t x = (int16_t)(position->ax * 100);
-  int16_t y = (int16_t)(position->ay * 100);
-  int16_t z = (int16_t)(position->az * 100);
+  int16_t x = (int16_t)(position->x * 100);
+  int16_t y = (int16_t)(position->y * 100);
+  int16_t z = (int16_t)(position->z * 100);
   int16_t yaw = (int16_t)(position->yaw * 100);
   int16_t pitch = (int16_t)(position->pitch * 100);
   int16_t roll = (int16_t)(position->roll * 100);
@@ -255,7 +256,7 @@ static void looper_work_handler(struct k_work *work)
 
   float magnetometer_tmp[3];
   imu_data_t current;
-  world_pos_t position;
+  world_posture_t posture;
   while(true) {
     if (!dready) {
       k_usleep(100);
@@ -282,21 +283,15 @@ static void looper_work_handler(struct k_work *work)
     
     // Alg process:
 
-    int err = alg_imu_update(&current);
-    if (err) {
-      // do nothing.
-      break;
-    }
-    err = alg_imu_get_current(&position);
-    if (err) {
-      // do nothing.
-      break;
-    }
+    world_posture_t posture = alg_posture_update(&current);
 
-    bool is_roll_balanced = alg_imu_is_roll_balanced();
+    bool is_roll_balanced = alg_posture_is_roll_balanced();
 
     // 亮灯
     pba_motor_front_en(!is_roll_balanced);
+
+    // pos:
+    world_position_t position = alg_position_update(posture);
 
     // if BLE enabled, commit to GATT.
     // size: 2 + (1 + 9 + 6) * 2 = 34 bytes
