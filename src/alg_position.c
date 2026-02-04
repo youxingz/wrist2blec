@@ -17,13 +17,14 @@ typedef struct {
   float bx;
   float by;
   float bz;
-  float g_ref;
+  float g_ref_mg;
   world_posture_t last;
   bool valid;
 } pos_state_t;
 
 static pos_state_t state = {
-  .g_ref = 9.80665f,
+  // 使用 mg 作为加速度输入单位：1 g = 1000 mg
+  .g_ref_mg = 1000.0f,
 };
 
 static inline float lpf_update(float prev, float input, float alpha)
@@ -79,29 +80,42 @@ static inline void rotate_body_to_world_euler(float bx, float by, float bz,
   *wz = r31 * bx + r32 * by + r33 * bz;
 }
 
-world_position_t alg_position_update(world_posture_t posture)
+world_position_t alg_position_update(const world_posture_t *posture,
+                                     const imu_data_t *imu)
 {
-  // 位置解算流程：
-  // 1) 将姿态输出的机体加速度旋转到世界坐标系
-  // 2) 判断姿态输出的加速度是否包含重力分量（当前未知）
-  // 3) 若包含重力，则在世界系 Z 轴方向去掉 g
-  // 4) 静止检测时估计偏置并清零速度，抑制积分漂移
-  // 5) 积分得到速度与位置（只作为短时间相对位移参考）
+  if (!posture || !imu) {
+    world_position_t empty = {
+      .x = state.x,
+      .y = state.y,
+      .z = state.z,
+      .yaw = state.last.yaw,
+      .pitch = state.last.pitch,
+      .roll = state.last.roll,
+    };
+    return empty;
+  }
+
+  world_posture_t posture_val = *posture;
+  // 位置解算流程（基于原始加速度）：
+  // 1) 使用姿态角（yaw/pitch/roll）将“原始 IMU 加速度”从机体坐标系旋转到世界坐标系
+  // 2) 在世界坐标系去掉重力分量，得到线加速度
+  // 3) 静止检测时估计偏置并清零速度，抑制积分漂移
+  // 4) 积分得到速度与位置（只作为短时间相对位移参考）
   //
-  // 注意：姿态角已验证正确，线加速度是否含重力不确定。
-  // 因此这里用幅值阈值做启发式判断，避免重复/遗漏重力补偿。
+  // 重要：加速度输入单位为 mg（1 g = 1000 mg）。
+  // 这里先在 mg 单位下做旋转和去重力，再统一换算到 m/s^2。
 
   world_position_t out = {
     .x = state.x,
     .y = state.y,
     .z = state.z,
-    .yaw = posture.yaw,
-    .pitch = posture.pitch,
-    .roll = posture.roll,
+    .yaw = posture_val.yaw,
+    .pitch = posture_val.pitch,
+    .roll = posture_val.roll,
   };
 
   if (!state.valid) {
-    state.last = posture;
+    state.last = posture_val;
     state.valid = true;
     return out;
   }
@@ -111,39 +125,35 @@ world_position_t alg_position_update(world_posture_t posture)
     dt = 0.01f;
   }
 
-  float ax = posture.ax;
-  float ay = posture.ay;
-  float az = posture.az;
+  // 原始 IMU 加速度（mg）
+  float ax_mg = imu->ax;
+  float ay_mg = imu->ay;
+  float az_mg = imu->az;
 
-  if (!isfinite(ax) || !isfinite(ay) || !isfinite(az)) {
+  if (!isfinite(ax_mg) || !isfinite(ay_mg) || !isfinite(az_mg)) {
     return out;
   }
 
-  // 将机体系加速度旋转到世界坐标系
-  float wx, wy, wz;
-  rotate_body_to_world_euler(ax, ay, az, posture.yaw, posture.pitch, posture.roll, &wx, &wy, &wz);
+  // 将机体系“原始加速度（mg）”旋转到世界坐标系
+  float wx_mg, wy_mg, wz_mg;
+  rotate_body_to_world_euler(ax_mg, ay_mg, az_mg,
+                             posture_val.yaw, posture_val.pitch, posture_val.roll,
+                             &wx_mg, &wy_mg, &wz_mg);
 
-  float acc_norm = norm3(ax, ay, az);
-  // 判断姿态输出是否包含重力分量：
-  // - 如果幅值接近 g，且并非极小值，则更可能是“原始加速度”（含重力）
-  // - 否则认为是“线加速度”（已去重力）
-  const float g_min_ratio = 0.7f;
-  const float g_max_ratio = 1.3f;
-  bool acc_includes_g = (acc_norm > state.g_ref * g_min_ratio) &&
-                        (acc_norm < state.g_ref * g_max_ratio);
+  // 世界系重力向量约为 (0, 0, +1g)；从原始加速度中去除
+  float lin_wx_mg = wx_mg;
+  float lin_wy_mg = wy_mg;
+  float lin_wz_mg = wz_mg - state.g_ref_mg;
 
-  // 线加速度（世界坐标）
-  float lin_wx = wx;
-  float lin_wy = wy;
-  float lin_wz = wz;
-  if (acc_includes_g) {
-    // 世界系重力向量为 (0, 0, g)
-    lin_wz -= state.g_ref;
-  }
+  // 统一换算到 m/s^2，避免后续阈值与积分混乱
+  const float mg_to_mps2 = 0.00980665f;
+  float lin_wx = lin_wx_mg * mg_to_mps2;
+  float lin_wy = lin_wy_mg * mg_to_mps2;
+  float lin_wz = lin_wz_mg * mg_to_mps2;
 
-  float dy = angle_diff_deg(posture.yaw, state.last.yaw);
-  float dp = angle_diff_deg(posture.pitch, state.last.pitch);
-  float dr = angle_diff_deg(posture.roll, state.last.roll);
+  float dy = angle_diff_deg(posture_val.yaw, state.last.yaw);
+  float dp = angle_diff_deg(posture_val.pitch, state.last.pitch);
+  float dr = angle_diff_deg(posture_val.roll, state.last.roll);
   float max_d = fmaxf(fmaxf(fabsf(dy), fabsf(dp)), fabsf(dr));
   float lin_norm = norm3(lin_wx, lin_wy, lin_wz);
 
@@ -162,10 +172,11 @@ world_position_t alg_position_update(world_posture_t posture)
     state.vy = 0.0f;
     state.vz = 0.0f;
 
-    // 静止且疑似包含重力时，轻微修正 g 参考值
-    if (acc_includes_g && isfinite(acc_norm)) {
+    // 静止时轻微修正 g 参考值（单位 mg），用于抵消量程误差
+    float acc_norm_mg = norm3(ax_mg, ay_mg, az_mg);
+    if (isfinite(acc_norm_mg)) {
       const float g_alpha = 0.01f;
-      state.g_ref = lpf_update(state.g_ref, acc_norm, g_alpha);
+      state.g_ref_mg = lpf_update(state.g_ref_mg, acc_norm_mg, g_alpha);
     }
   }
 
@@ -184,7 +195,7 @@ world_position_t alg_position_update(world_posture_t posture)
   state.y += state.vy * dt;
   state.z += state.vz * dt;
 
-  state.last = posture;
+  state.last = posture_val;
 
   out.x = state.x;
   out.y = state.y;

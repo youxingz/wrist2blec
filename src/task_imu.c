@@ -291,7 +291,7 @@ static void looper_work_handler(struct k_work *work)
     pba_motor_front_en(!is_roll_balanced);
 
     // pos:
-    world_position_t position = alg_position_update(posture);
+    world_position_t position = alg_position_update(&posture, &current);
 
     // if BLE enabled, commit to GATT.
     // size: 2 + (1 + 9 + 6) * 2 = 34 bytes
