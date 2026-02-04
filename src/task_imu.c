@@ -120,7 +120,7 @@ int task_imu_start()
   }
   // icm_42688_set_odr_fsr(/* who= */GYRO,/* ODR= */ODR_500HZ, /* FSR = */FSR_0);
   // icm_42688_set_odr_fsr(/* who= */ALL,/* ODR= */ODR_500HZ, /* FSR = */FSR_0);
-  icm_42688_set_odr_fsr(/* who= */ALL,/* ODR= */ODR_8KHZ, /* FSR = */FSR_3);
+  icm_42688_set_odr_fsr(/* who= */ALL,/* ODR= */ODR_8KHZ, /* FSR = */FSR_1);
   icm_42688_set_gyro_notch_filter_frequency(1000.0, ALL);
   icm_42688_set_gyro_notch_filter(true);
   icm_42688_set_aaf_bandwidth(ALL, 0); // ~1000Hz

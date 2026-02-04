@@ -81,6 +81,16 @@ static inline void rotate_body_to_world_euler(float bx, float by, float bz,
 
 world_position_t alg_position_update(world_posture_t posture)
 {
+  // 位置解算流程：
+  // 1) 将姿态输出的机体加速度旋转到世界坐标系
+  // 2) 判断姿态输出的加速度是否包含重力分量（当前未知）
+  // 3) 若包含重力，则在世界系 Z 轴方向去掉 g
+  // 4) 静止检测时估计偏置并清零速度，抑制积分漂移
+  // 5) 积分得到速度与位置（只作为短时间相对位移参考）
+  //
+  // 注意：姿态角已验证正确，线加速度是否含重力不确定。
+  // 因此这里用幅值阈值做启发式判断，避免重复/遗漏重力补偿。
+
   world_position_t out = {
     .x = state.x,
     .y = state.y,
@@ -109,16 +119,25 @@ world_position_t alg_position_update(world_posture_t posture)
     return out;
   }
 
+  // 将机体系加速度旋转到世界坐标系
   float wx, wy, wz;
   rotate_body_to_world_euler(ax, ay, az, posture.yaw, posture.pitch, posture.roll, &wx, &wy, &wz);
 
   float acc_norm = norm3(ax, ay, az);
-  bool raw_acc = acc_norm > state.g_ref * 0.6f;
+  // 判断姿态输出是否包含重力分量：
+  // - 如果幅值接近 g，且并非极小值，则更可能是“原始加速度”（含重力）
+  // - 否则认为是“线加速度”（已去重力）
+  const float g_min_ratio = 0.7f;
+  const float g_max_ratio = 1.3f;
+  bool acc_includes_g = (acc_norm > state.g_ref * g_min_ratio) &&
+                        (acc_norm < state.g_ref * g_max_ratio);
 
+  // 线加速度（世界坐标）
   float lin_wx = wx;
   float lin_wy = wy;
   float lin_wz = wz;
-  if (raw_acc) {
+  if (acc_includes_g) {
+    // 世界系重力向量为 (0, 0, g)
     lin_wz -= state.g_ref;
   }
 
@@ -128,11 +147,13 @@ world_position_t alg_position_update(world_posture_t posture)
   float max_d = fmaxf(fmaxf(fabsf(dy), fabsf(dp)), fabsf(dr));
   float lin_norm = norm3(lin_wx, lin_wy, lin_wz);
 
+  // 静止检测：角度变化小 + 线加速度小
   const float stationary_angle_deg = 1.0f;
   const float stationary_lin_mps2 = 0.2f;
   bool stationary = (max_d < stationary_angle_deg) && (lin_norm < stationary_lin_mps2);
 
   if (stationary) {
+    // 静止时低通估计偏置，抑制积分漂移
     const float bias_alpha = 0.02f;
     state.bx = lpf_update(state.bx, lin_wx, bias_alpha);
     state.by = lpf_update(state.by, lin_wy, bias_alpha);
@@ -141,20 +162,24 @@ world_position_t alg_position_update(world_posture_t posture)
     state.vy = 0.0f;
     state.vz = 0.0f;
 
-    if (raw_acc && isfinite(acc_norm)) {
+    // 静止且疑似包含重力时，轻微修正 g 参考值
+    if (acc_includes_g && isfinite(acc_norm)) {
       const float g_alpha = 0.01f;
       state.g_ref = lpf_update(state.g_ref, acc_norm, g_alpha);
     }
   }
 
+  // 去除静止偏置后再积分
   lin_wx -= state.bx;
   lin_wy -= state.by;
   lin_wz -= state.bz;
 
+  // 速度积分
   state.vx += lin_wx * dt;
   state.vy += lin_wy * dt;
   state.vz += lin_wz * dt;
 
+  // 位置积分
   state.x += state.vx * dt;
   state.y += state.vy * dt;
   state.z += state.vz * dt;
