@@ -16,10 +16,12 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(task_imu, LOG_LEVEL_INF);
 
+#define ENABLE_TICKTOCK_ANALYSIS
+
 static int worker_init();
 
 // nRF Timer
-#define SAMPLE_TIME_MS 10  // timer: 2ms
+#define SAMPLE_TIME_MS 10  // timer: 10ms
 #define TIMER_INST  NRF_TIMER1
 static nrfx_timer_t timer = NRFX_TIMER_INSTANCE(TIMER_INST);
 #define TASK_IMU_PRIORITY 3
@@ -260,6 +262,12 @@ static int convert2buf(uint16_t index,
 
 static void looper_work_handler(struct k_work *work)
 {
+#ifdef ENABLE_TICKTOCK_ANALYSIS
+  uint32_t start_cyc = k_cycle_get_32();
+  static uint32_t exec_count = 0;
+  static uint64_t exec_sum_us = 0;
+#endif
+  // static uint32_t ble_commit_count = 0;
   // SPI & ALG
 
   float magnetometer_tmp[3];
@@ -298,19 +306,35 @@ static void looper_work_handler(struct k_work *work)
     bool is_pitch_balanced = alg_posture_is_pitch_balanced();
     bool is_roll_balanced = alg_posture_is_roll_balanced();
 
+    bool alert = !(is_yaw_balanced && is_pitch_balanced && is_roll_balanced);
     // 亮灯 + 震动
-    pba_motor_front_en(!is_roll_balanced);
-    pba_led_green(!is_roll_balanced);
+    pba_motor_front_en(alert);
+    pba_led_green(!alert);
+    pba_led_red(alert);
 
     // pos:
     world_position_t position = alg_position_update(&posture, &current);
 
     // if BLE enabled, commit to GATT.
     // size: 2 + (1 + 9 + 6) * 2 = 34 bytes
+    // if ((ble_commit_count++ % 1U) == 0U) {
     #define CM_BUFFER_SIZE 37
     uint8_t buf[CM_BUFFER_SIZE];
     int len = convert2buf(dindex, &current, &position, is_yaw_balanced, is_pitch_balanced, is_roll_balanced, buf);
     ble_aaef_notify_commit(buf, len);
+    // }
   }
+#ifdef ENABLE_TICKTOCK_ANALYSIS
+  uint32_t end_cyc = k_cycle_get_32();
+  uint64_t elapsed_us = k_cyc_to_us_floor64(end_cyc - start_cyc);
+  exec_sum_us += elapsed_us;
+  exec_count++;
+  if (exec_count >= 50) {
+    uint64_t avg_us = exec_sum_us / exec_count;
+    LOG_INF("[IMU] looper avg: %llu us (10 runs)", (unsigned long long)avg_us);
+    exec_count = 0;
+    exec_sum_us = 0;
+  }
+#endif
 	k_work_reschedule(k_work_delayable_from_work(work), K_USEC(LOOPER_INTERVAL));
 }

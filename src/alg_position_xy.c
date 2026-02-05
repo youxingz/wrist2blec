@@ -15,7 +15,7 @@
 
 // ------------------------------------------------------------
 // Debug switch (you can hook your own logger via ALG_DEBUG_PRINTF)
-#define ENABLE_DEBUG_LOG
+// #define ENABLE_DEBUG_LOG
 #ifdef ENABLE_DEBUG_LOG
 #ifndef ALG_DEBUG_PRINTF
 #define ALG_DEBUG_PRINTF(...) printk(__VA_ARGS__)
