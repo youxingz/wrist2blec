@@ -269,8 +269,12 @@ static void mahony_update(posture_state_t *s,
 {
   // gains (tune as you like)
   // larger Kp => faster correction but more noise
+  // 原始参数（100Hz 左右调的），保留作对比
   const float Kp = 2.0f;
   const float Ki = 0.05f;
+  // // 1kHz 采样下，单位时间内修正力度会变弱，适度提高以兼顾响应与稳定
+  // const float Kp = 6.0f;
+  // const float Ki = 0.10f;
 
   // normalize accelerometer
   float ax = ax_mg, ay = ay_mg, az = az_mg;
@@ -415,14 +419,16 @@ world_posture_t alg_posture_update(imu_data_t *data)
   float mz = data->mz;
 
   float dt = (float)posture_config.sample_us / 1000000.0f;
-  if (!isfinite(dt) || dt <= 0.0f) {
-    dt = 0.002f;
-  }
 
   // 1st-order LPF for stability (cutoffs are conservative for motion analysis)
+  // 原始截止频率（100Hz 左右调的），保留作对比
   const float acc_cutoff_hz = 10.0f;
   const float gyro_cutoff_hz = 20.0f;
   const float mag_cutoff_hz = 10.0f;
+  // // 1kHz 下提高截止频率，避免滤波过强导致响应滞后
+  // const float acc_cutoff_hz = 25.0f;
+  // const float gyro_cutoff_hz = 50.0f;
+  // const float mag_cutoff_hz = 20.0f;
 
   const float tau_acc = 1.0f / (2.0f * (float)M_PI * acc_cutoff_hz);
   const float tau_gyro = 1.0f / (2.0f * (float)M_PI * gyro_cutoff_hz);
@@ -554,12 +560,6 @@ world_position_t alg_position_update(const world_posture_t *posture,
 
   // Fixed-rate integration. If you have real timestamps, replace this with measured dt.
   float dt = (float)posture_config.sample_us / 1000000.0f;
-  if (!isfinite(dt) || dt <= 0.0f) {
-    dt = 0.01f; // 10ms default sampling time
-  }
-  // clamp dt against occasional spikes
-  if (dt < 0.0005f) dt = 0.0005f;
-  if (dt > 0.05f)   dt = 0.05f;
 
   // raw accel in BODY (mg) - this is specific force (includes gravity)
   float ax_mg = imu->ax;
