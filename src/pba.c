@@ -16,6 +16,13 @@ LOG_MODULE_REGISTER(pba, LOG_LEVEL_INF);
     NRF_GPIO_PIN_H0H1, \
     NRF_GPIO_PIN_NOSENSE);
 
+static inline void pin_out_update(uint32_t pin, bool on) {
+  if (on) {
+    nrf_gpio_pin_clear(pin);
+  } else {
+    nrf_gpio_pin_set(pin);
+  }
+}
 
 static int on_pba_charging(){}
 static int on_pba_charged(){}
@@ -128,33 +135,20 @@ bool pba_power_en(bool on)
   return true;
 }
 
-bool pba_led_green(bool en)
+bool pba_led_green(bool on)
 {
-  return false;
-  if (en) {
-    nrf_gpio_pin_clear(PIN_LED_G);
-  } else {
-    nrf_gpio_pin_set(PIN_LED_G);
-  }
+  pin_out_update(PIN_LED_G, on);
   return true;
 }
 
 bool pba_led_blue(bool on)
 {
-  if (on) {
-    nrf_gpio_pin_clear(PIN_LED_B);
-  } else {
-    nrf_gpio_pin_set(PIN_LED_B);
-  }
+  pin_out_update(PIN_LED_B, on);
   return true;
 }
 bool pba_led_red(bool on)
 {
-  if (on) {
-    nrf_gpio_pin_clear(PIN_LED_R);
-  } else {
-    nrf_gpio_pin_set(PIN_LED_R);
-  }
+  pin_out_update(PIN_LED_R, on);
   return true;
 }
 

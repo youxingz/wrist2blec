@@ -26,3 +26,4 @@ bool alg_posture_is_pitch_balanced(void);
 bool alg_posture_is_roll_balanced(void);
 
 int alg_posture_update_threshold(uint8_t axis, float threshold_deg);
+void alg_posture_get_thresholds(float *yaw, float *pitch, float *roll);

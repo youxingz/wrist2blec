@@ -71,3 +71,8 @@
 		};
 	};
 };
+
+&uicr {
+	/* 将 NFC 引脚复用为 GPIO（P0.09/P0.10） */
+	nfct-pins-as-gpios;
+};

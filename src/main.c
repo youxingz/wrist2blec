@@ -13,9 +13,10 @@ int event_after_startup()
 }
 int event_before_shutdown()
 {
-  task_imu_stop();
-  task_imu_uninit();
-  ble_uninit();
+  //// do nothing.
+  // task_imu_stop();
+  // task_imu_uninit();
+  // ble_uninit();
   return 0;
 }
 

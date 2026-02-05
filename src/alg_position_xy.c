@@ -759,7 +759,7 @@ bool alg_posture_is_roll_balanced(void)
   if (posture_config.balance_roll_thresh <= 0.0f) {
     return true;
   }
-  float dr = angle_diff_deg(state.current.roll, posture_config.balance_roll);
+  float dr = angle_diff_deg(fabsf(state.current.roll), posture_config.balance_roll);
   return fabsf(dr) <= posture_config.balance_roll_thresh;
 }
 
@@ -779,6 +779,19 @@ int alg_posture_update_threshold(uint8_t axis, float threshold_deg)
       return -EINVAL;
   }
   return 0;
+}
+
+void alg_posture_get_thresholds(float *yaw, float *pitch, float *roll)
+{
+  if (yaw) {
+    *yaw = posture_config.balance_yaw_thresh;
+  }
+  if (pitch) {
+    *pitch = posture_config.balance_pitch_thresh;
+  }
+  if (roll) {
+    *roll = posture_config.balance_roll_thresh;
+  }
 }
 
 #endif

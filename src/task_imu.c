@@ -75,7 +75,7 @@ int task_imu_init()
     .sample_us = SAMPLE_TIME_MS * 1000, // 10ms
     .balance_yaw = 0.0f,
     .balance_pitch = 0.0f,
-    .balance_roll = -90.0f,
+    .balance_roll = 90.0f, // 同时支持 ±90°
     .balance_yaw_thresh = -1.0f,
     .balance_pitch_thresh = -1.0f,
     .balance_roll_thresh = 10.0f,
@@ -190,7 +190,10 @@ static int worker_init()
 }
 
 // helper func:
-static int convert2buf(uint16_t index, imu_data_t * imu, world_position_t * position, uint8_t * buf)
+static int convert2buf(uint16_t index,
+                      imu_data_t * imu, world_position_t * position, 
+                      bool is_yaw_balanced, bool is_pitch_balanced, bool is_roll_balanced,
+                      uint8_t * buf)
 {
   // ts:
   int i = 0;
@@ -246,6 +249,11 @@ static int convert2buf(uint16_t index, imu_data_t * imu, world_position_t * posi
   buf[i++] = pitch & 0xFF;
   buf[i++] = (roll >> 8) & 0xFF;
   buf[i++] = roll & 0xFF;
+
+  // balanced:
+  buf[i++] = (is_yaw_balanced ? 0x01 : 0x00);
+  buf[i++] = (is_pitch_balanced ? 0x01 : 0x00);
+  buf[i++] = (is_roll_balanced ? 0x01 : 0x00);
   return i;
 }
 
@@ -257,6 +265,7 @@ static void looper_work_handler(struct k_work *work)
   float magnetometer_tmp[3];
   imu_data_t current;
   world_posture_t posture;
+
   while(true) {
     if (!dready) {
       k_usleep(100);
@@ -285,19 +294,22 @@ static void looper_work_handler(struct k_work *work)
 
     world_posture_t posture = alg_posture_update(&current);
 
+    bool is_yaw_balanced = alg_posture_is_yaw_balanced();
+    bool is_pitch_balanced = alg_posture_is_pitch_balanced();
     bool is_roll_balanced = alg_posture_is_roll_balanced();
 
-    // 亮灯
+    // 亮灯 + 震动
     pba_motor_front_en(!is_roll_balanced);
+    pba_led_green(!is_roll_balanced);
 
     // pos:
     world_position_t position = alg_position_update(&posture, &current);
 
     // if BLE enabled, commit to GATT.
     // size: 2 + (1 + 9 + 6) * 2 = 34 bytes
-    #define CM_BUFFER_SIZE 34
+    #define CM_BUFFER_SIZE 37
     uint8_t buf[CM_BUFFER_SIZE];
-    int len = convert2buf(dindex, &current, &position, buf);
+    int len = convert2buf(dindex, &current, &position, is_yaw_balanced, is_pitch_balanced, is_roll_balanced, buf);
     ble_aaef_notify_commit(buf, len);
   }
 	k_work_reschedule(k_work_delayable_from_work(work), K_USEC(LOOPER_INTERVAL));
