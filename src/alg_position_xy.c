@@ -1,4 +1,4 @@
-// #define ENABLE_IT
+#define ENABLE_IT
 #ifdef ENABLE_IT
 /**
  * XY 平面运动，但有积分漂移，重力成分未完全消除
@@ -11,59 +11,27 @@
 #include <math.h>
 #include <stdbool.h>
 #include <string.h>
-#include <stdint.h>
+
+
+// ------------------------------------------------------------
+// Debug switch (you can hook your own logger via ALG_DEBUG_PRINTF)
+#define ENABLE_DEBUG_LOG
+#ifdef ENABLE_DEBUG_LOG
+#ifndef ALG_DEBUG_PRINTF
+#define ALG_DEBUG_PRINTF(...) printk(__VA_ARGS__)
+#endif
+#else
+#ifndef ALG_DEBUG_PRINTF
+#define ALG_DEBUG_PRINTF(...) do { (void)0; } while (0)
+#endif
+#endif
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
-/* ======================= User-configurable accel bias (DEVICE/BODY) =======================
- * These biases are applied to the *linear acceleration after gravity removal* in BODY frame.
- * Unit: m/s^2
- * How to obtain:
- *   - Keep device static in the intended mounting orientation for several seconds.
- *   - Compute mean of (a_body - g_dir*|g|) converted to m/s^2.
- *   - Fill the averages below (sign included).
- * Notes:
- *   - If you only integrate X/Y and ignore Z, you can leave Z at 0.
- */
-#ifndef USER_ACCEL_BIAS_X_MPS2
-#define USER_ACCEL_BIAS_X_MPS2 (0.0f)
-#endif
-#ifndef USER_ACCEL_BIAS_Y_MPS2
-#define USER_ACCEL_BIAS_Y_MPS2 (0.0f)
-#endif
-#ifndef USER_ACCEL_BIAS_Z_MPS2
-#define USER_ACCEL_BIAS_Z_MPS2 (0.0f)
-#endif
-/* ======================================================================================== */
-
-// Runtime bias (m/s^2). Initialized from USER_ACCEL_BIAS_* macros.
-// Can be overwritten once by alg_position_autocalib_*().
-static float g_acc_bias_x_mps2 = (float)USER_ACCEL_BIAS_X_MPS2;
-static float g_acc_bias_y_mps2 = (float)USER_ACCEL_BIAS_Y_MPS2;
-static float g_acc_bias_z_mps2 = (float)USER_ACCEL_BIAS_Z_MPS2;
-
-// One-shot auto-calibration state
-typedef struct {
-  bool active;
-  float target_s;
-  float elapsed_s;
-
-  // running sums of linear accel after gravity removal (m/s^2)
-  double sum_x;
-  double sum_y;
-  double sum_z;
-  uint32_t n;
-
-  // estimate gravity magnitude in mg during calibration (for robustness)
-  float g_mg_lpf;
-} alg_pos_calib_t;
-
-static alg_pos_calib_t g_calib = {0};
-
 // ------------------------------------------------------------
-// Notes / Assumptions (matches your previous implementation):
+// Notes / Assumptions:
 // - imu_data_t:
 //     accel: mg (1 g = 1000 mg)
 //     gyro : dps (deg/s)
@@ -124,18 +92,13 @@ typedef struct {
   float ax_f, ay_f, az_f;
 
   // gravity magnitude reference in mg (normally ~1000)
+
+  // Slow DC remover mean on DEVICE X/Y (m/s^2)
+  float mean_ax, mean_ay;
   float g_ref_mg;
 
   world_posture_t last;
   bool valid;
-  // auto recalib when stationary > 1s
-  float stat_elapsed_s;
-  bool  stat_recalib_done;
-  double stat_sum_x;
-  double stat_sum_y;
-  double stat_sum_z;
-  uint32_t stat_n;
-
 } position_state_t;
 
 static position_state_t pos_state = {
@@ -533,46 +496,6 @@ world_posture_t alg_posture_update(imu_data_t *data)
   float lin_norm = norm3(lin_bx, lin_by, lin_bz);
   bool stationary = (gyro_norm_dps < 2.0f) && (lin_norm < 0.25f);
 
-  // ------------------------------------------------------------
-  // Auto re-calibration when stationary continuously > 1.0s:
-  //   - accumulate linear accel (after gravity removal, BEFORE applying bias)
-  //   - once per stationary episode, recompute fixed bias as the mean
-  // ------------------------------------------------------------
-  if (stationary) {
-    pos_state.stat_elapsed_s += dt;
-    pos_state.stat_sum_x += (double)lin_bx;
-    pos_state.stat_sum_y += (double)lin_by;
-    pos_state.stat_sum_z += (double)lin_bz;
-    pos_state.stat_n += 1;
-
-    if (!pos_state.stat_recalib_done && pos_state.stat_elapsed_s >= 1.0f && pos_state.stat_n > 20) {
-      g_acc_bias_x_mps2 = (float)(pos_state.stat_sum_x / (double)pos_state.stat_n);
-      g_acc_bias_y_mps2 = (float)(pos_state.stat_sum_y / (double)pos_state.stat_n);
-      g_acc_bias_z_mps2 = (float)(pos_state.stat_sum_z / (double)pos_state.stat_n);
-
-      pos_state.stat_recalib_done = true;
-
-      // reset integrators so we don't "creep" while stationary
-      pos_state.vx = 0.0f;
-      pos_state.vy = 0.0f;
-      pos_state.vz = 0.0f;
-
-#ifdef ENABLE_DEBUG_LOG
-      DBG_PRINTF("[pos] auto-recalib bias(m/s^2)=(%.5f %.5f %.5f) n=%u\n",
-                 (double)g_acc_bias_x_mps2, (double)g_acc_bias_y_mps2, (double)g_acc_bias_z_mps2,
-                 (unsigned)pos_state.stat_n);
-#endif
-    }
-  } else {
-    // reset episode accumulation
-    pos_state.stat_elapsed_s = 0.0f;
-    pos_state.stat_recalib_done = false;
-    pos_state.stat_sum_x = 0.0;
-    pos_state.stat_sum_y = 0.0;
-    pos_state.stat_sum_z = 0.0;
-    pos_state.stat_n = 0;
-  }
-
   // bias adaptation in BODY when stationary
   if (stationary) {
     const float bias_alpha = 0.01f;
@@ -623,19 +546,16 @@ world_position_t alg_position_update(const world_posture_t *posture,
     // reset filters
     pos_state.bx = pos_state.by = pos_state.bz = 0.0f;
     pos_state.ax_f = pos_state.ay_f = pos_state.az_f = 0.0f;
+    pos_state.mean_ax = pos_state.mean_ay = 0.0f;
     pos_state.vx = pos_state.vy = pos_state.vz = 0.0f;
     pos_state.x = pos_state.y = pos_state.z = 0.0f;
     return out;
   }
 
-#ifndef ALG_POSITION_SAMPLE_US
-#define ALG_POSITION_SAMPLE_US 10000U
-#endif
-
   // Fixed-rate integration. If you have real timestamps, replace this with measured dt.
-  float dt = (float)ALG_POSITION_SAMPLE_US / 1000000.0f;
+  float dt = (float)posture_config.sample_us / 1000000.0f;
   if (!isfinite(dt) || dt <= 0.0f) {
-    dt = 0.01f;
+    dt = 0.01f; // 10ms default sampling time
   }
   // clamp dt against occasional spikes
   if (dt < 0.0005f) dt = 0.0005f;
@@ -659,16 +579,11 @@ world_position_t alg_position_update(const world_posture_t *posture,
   float lin_bz_mg = az_mg - state.gbz * pos_state.g_ref_mg;
 
   // Convert BODY linear accel (still mg) -> m/s^2
-// NOTE: Output requested is in DEVICE(BODY) XY, so we keep everything in BODY frame.
-const float mg_to_mps2 = 0.00980665f;
-float lin_bx = lin_bx_mg * mg_to_mps2;
-float lin_by = lin_by_mg * mg_to_mps2;
-float lin_bz = lin_bz_mg * mg_to_mps2;
-  // Apply fixed accel bias (configured or auto-calibrated at boot)
-  lin_bx -= g_acc_bias_x_mps2;
-  lin_by -= g_acc_bias_y_mps2;
-  lin_bz -= g_acc_bias_z_mps2;
-
+  // NOTE: Output requested is in DEVICE(BODY) XY, so we keep everything in BODY frame.
+  const float mg_to_mps2 = 0.00980665f;
+  float lin_bx = lin_bx_mg * mg_to_mps2;
+  float lin_by = lin_by_mg * mg_to_mps2;
+  float lin_bz = lin_bz_mg * mg_to_mps2;
 
   // ------------------------------------------------------------
   // OUTPUT DEFINITION (per your latest spec):
@@ -713,8 +628,13 @@ float lin_bz = lin_bz_mg * mg_to_mps2;
   if (tau_bias_s < 0.05f) tau_bias_s = 0.05f;
   float alpha_bias = dt / (tau_bias_s + dt);
 
+  pos_state.bx = lpf_update(pos_state.bx, lin_bx, alpha_bias);
+  pos_state.by = lpf_update(pos_state.by, lin_by, alpha_bias);
+  pos_state.bz = lpf_update(pos_state.bz, lin_bz, alpha_bias);
 
   // Subtract bias (high-pass effect)
+  lin_bx -= pos_state.bx;
+  lin_by -= pos_state.by;
   /* lin_bz kept for stationarity only; ignore in integration */
   (void)lin_bz;
 
@@ -728,7 +648,26 @@ float lin_bz = lin_bz_mg * mg_to_mps2;
 
   pos_state.ax_f = lpf_update(pos_state.ax_f, lin_bx, alpha_acc);
   pos_state.ay_f = lpf_update(pos_state.ay_f, lin_by, alpha_acc);
-  pos_state.az_f = lpf_update(pos_state.az_f, lin_bz, alpha_acc);
+  pos_state.az_f = 0.0f; // ignore DEVICE Z axis for 2D XY output
+
+
+  // ------------------------------------------------------------
+  // Step 4.5) DC remover on DEVICE X/Y (key for removing "constant pull" -> spiral)
+  //   - Track a slow-varying mean and subtract it before integration.
+  //   - When stationary, converge faster so we don't get a "kick" when moving again.
+  // ------------------------------------------------------------
+  float tau_mean_s = stationary ? 0.30f : 2.0f; // seconds
+  float alpha_mean = dt / (tau_mean_s + dt);
+  pos_state.mean_ax = lpf_update(pos_state.mean_ax, pos_state.ax_f, alpha_mean);
+  pos_state.mean_ay = lpf_update(pos_state.mean_ay, pos_state.ay_f, alpha_mean);
+
+  float ax_use = pos_state.ax_f - pos_state.mean_ax;
+  float ay_use = pos_state.ay_f - pos_state.mean_ay;
+
+#ifdef ENABLE_DEBUG_LOG
+  // You can hook this macro to your logger if needed.
+  ALG_DEBUG_PRINTF("acc_use=%.3f %.3f\n", ax_use, ay_use);
+#endif
 
   // ------------------------------------------------------------
   // Step 5) ZUPT + gravity magnitude update when stationary
@@ -741,7 +680,7 @@ float lin_bz = lin_bz_mg * mg_to_mps2;
     // update gravity magnitude reference (mg) slowly using raw accel magnitude
     const float g_alpha = 0.02f;
     float acc_norm_mg = norm3(ax_mg, ay_mg, az_mg);
-    if (isfinite(acc_norm_mg) && acc_norm_mg > 100.0f) {
+    if (isfinite(acc_norm_mg) && acc_norm_mg > 900.0f && acc_norm_mg < 1100.0f) {
       pos_state.g_ref_mg = lpf_update(pos_state.g_ref_mg, acc_norm_mg, g_alpha);
     }
 
@@ -749,13 +688,17 @@ float lin_bz = lin_bz_mg * mg_to_mps2;
     pos_state.ax_f *= 0.5f;
     pos_state.ay_f *= 0.5f;
     pos_state.az_f *= 0.5f;
+
+    // also pull DC mean toward current filtered accel (prevents spiral kick after ZUPT)
+    pos_state.mean_ax = lpf_update(pos_state.mean_ax, pos_state.ax_f, 0.5f);
+    pos_state.mean_ay = lpf_update(pos_state.mean_ay, pos_state.ay_f, 0.5f);
   }
 
   // ------------------------------------------------------------
   // Step 6) Integrate velocity/position
   // ------------------------------------------------------------
-  pos_state.vx += pos_state.ax_f * dt;
-  pos_state.vy += pos_state.ay_f * dt;
+  pos_state.vx += ax_use * dt;
+  pos_state.vy += ay_use * dt;
   // ignore device Z displacement
   pos_state.vz = 0.0f;
 // velocity leak to keep trajectory bounded
@@ -770,14 +713,14 @@ float lin_bz = lin_bz_mg * mg_to_mps2;
   pos_state.x += pos_state.vx * dt;
   pos_state.y += pos_state.vy * dt;
   pos_state.z = 0.0f;
-pos_state.last = p;
+  pos_state.last = p;
 
   // Output requirement:
-//   1) Only need 2D trajectory in DEVICE(BODY) coordinates (x/y).
-//   2) Ignore motion along device Z axis: set output z = 0.
-// We keep integrating in WORLD for stability, then convert the integrated
-// position into BODY frame at the current posture.
-out.x = pos_state.x;
+  //   1) Only need 2D trajectory in DEVICE(BODY) coordinates (x/y).
+  //   2) Ignore motion along device Z axis: set output z = 0.
+  // We keep integrating in WORLD for stability, then convert the integrated
+  // position into BODY frame at the current posture.
+  out.x = pos_state.x;
   out.y = pos_state.y;
   out.z = 0.0f;
   return out;
@@ -788,7 +731,7 @@ bool alg_posture_is_yaw_balanced(void)
   if (!state.valid) {
     return false;
   }
-  if (posture_config.balance_yaw_thresh < 0.0f) {
+  if (posture_config.balance_yaw_thresh <= 0.0f) {
     return true;
   }
   float dy = angle_diff_deg(state.current.yaw, posture_config.balance_yaw);
@@ -800,7 +743,7 @@ bool alg_posture_is_pitch_balanced(void)
   if (!state.valid) {
     return false;
   }
-  if (posture_config.balance_pitch_thresh < 0.0f) {
+  if (posture_config.balance_pitch_thresh <= 0.0f) {
     return true;
   }
   float dp = angle_diff_deg(state.current.pitch, posture_config.balance_pitch);
@@ -812,7 +755,7 @@ bool alg_posture_is_roll_balanced(void)
   if (!state.valid) {
     return false;
   }
-  if (posture_config.balance_roll_thresh < 0.0f) {
+  if (posture_config.balance_roll_thresh <= 0.0f) {
     return true;
   }
   float dr = angle_diff_deg(state.current.roll, posture_config.balance_roll);
@@ -838,131 +781,3 @@ int alg_posture_update_threshold(uint8_t axis, float threshold_deg)
 }
 
 #endif
-
-
-/* ======================= Auto calibration API =======================
- * Usage at boot (device kept still 1-3s):
- *   alg_position_autocalib_begin(2.0f); // seconds
- *   while (!alg_position_autocalib_update(&imu, dt)) {
- *       // keep calling posture/Mahony update as usual so quaternion is valid
- *   }
- *   // done: bias captured and frozen, position state reset to zero
- */
-void alg_position_autocalib_begin(float duration_s)
-{
-  if (!isfinite(duration_s) || duration_s <= 0.1f) {
-    duration_s = 1.0f;
-  }
-  if (duration_s > 10.0f) {
-    duration_s = 10.0f;
-  }
-
-  g_calib.active = true;
-  g_calib.target_s = duration_s;
-  g_calib.elapsed_s = 0.0f;
-  g_calib.sum_x = 0.0;
-  g_calib.sum_y = 0.0;
-  g_calib.sum_z = 0.0;
-  g_calib.n = 0;
-  g_calib.g_mg_lpf = 1000.0f;
-
-  // reset integrators so nothing carries over
-  // (keep current biases until calibration finishes)
-  memset(&pos_state, 0, sizeof(pos_state));
-
-#ifdef ENABLE_DEBUG_LOG
-  DBG_PRINTF("[pos] autocalib begin: %.2fs\n", (double)duration_s);
-#endif
-}
-
-// Feed samples during the still window.
-// Returns true when calibration completes and biases are frozen.
-bool alg_position_autocalib_update(const imu_data_t *imu, float dt_s)
-{
-  if (!g_calib.active) {
-    return true;
-  }
-  if (!imu || !isfinite(dt_s) || dt_s <= 0.0f) {
-    return false;
-  }
-
-  // Clamp dt to avoid spikes
-  if (dt_s < 0.0005f) dt_s = 0.0005f;
-  if (dt_s > 0.05f) dt_s = 0.05f;
-
-  // gravity direction in BODY from current quaternion (assumes posture update is running)
-  float gbx, gby, gbz;
-  gravity_body_from_quat(&state, &gbx, &gby, &gbz);
-
-  // estimate g magnitude from accel norm in mg
-  float ax_mg = imu->ax;
-  float ay_mg = imu->ay;
-  float az_mg = imu->az;
-  if (!(isfinite(ax_mg) && isfinite(ay_mg) && isfinite(az_mg))) {
-    g_calib.elapsed_s += dt_s;
-    return false;
-  }
-
-  float g_norm_mg = norm3(ax_mg, ay_mg, az_mg);
-  if (isfinite(g_norm_mg) && g_norm_mg > 100.0f) {
-    // slow LPF to reject vibration
-    g_calib.g_mg_lpf = lpf_update(g_calib.g_mg_lpf, g_norm_mg, 0.02f);
-  }
-
-  // linear accel in BODY (mg) = specific force - g_dir*|g|
-  float lin_bx_mg = ax_mg - gbx * g_calib.g_mg_lpf;
-  float lin_by_mg = ay_mg - gby * g_calib.g_mg_lpf;
-  float lin_bz_mg = az_mg - gbz * g_calib.g_mg_lpf;
-
-  // to m/s^2
-  float lin_bx = lin_bx_mg * 0.00980665f;
-  float lin_by = lin_by_mg * 0.00980665f;
-  float lin_bz = lin_bz_mg * 0.00980665f;
-
-  // accumulate
-  g_calib.sum_x += (double)lin_bx;
-  g_calib.sum_y += (double)lin_by;
-  g_calib.sum_z += (double)lin_bz;
-  g_calib.n += 1;
-  g_calib.elapsed_s += dt_s;
-
-  if (g_calib.elapsed_s >= g_calib.target_s && g_calib.n > 10) {
-    g_acc_bias_x_mps2 = (float)(g_calib.sum_x / (double)g_calib.n);
-    g_acc_bias_y_mps2 = (float)(g_calib.sum_y / (double)g_calib.n);
-    g_acc_bias_z_mps2 = (float)(g_calib.sum_z / (double)g_calib.n);
-
-    g_calib.active = false;
-
-    // reset integrators after calibration so output starts from zero
-    memset(&pos_state, 0, sizeof(pos_state));
-
-#ifdef ENABLE_DEBUG_LOG
-    DBG_PRINTF("[pos] autocalib done: n=%u bias(m/s^2)=(%.5f %.5f %.5f)\n",
-               (unsigned)g_calib.n,
-               (double)g_acc_bias_x_mps2, (double)g_acc_bias_y_mps2, (double)g_acc_bias_z_mps2);
-#endif
-    return true;
-  }
-
-  return false;
-}
-
-bool alg_position_autocalib_is_active(void)
-{
-  return g_calib.active;
-}
-
-void alg_position_set_accel_bias_mps2(float bx, float by, float bz)
-{
-  if (isfinite(bx)) g_acc_bias_x_mps2 = bx;
-  if (isfinite(by)) g_acc_bias_y_mps2 = by;
-  if (isfinite(bz)) g_acc_bias_z_mps2 = bz;
-}
-
-void alg_position_get_accel_bias_mps2(float *bx, float *by, float *bz)
-{
-  if (bx) *bx = g_acc_bias_x_mps2;
-  if (by) *by = g_acc_bias_y_mps2;
-  if (bz) *bz = g_acc_bias_z_mps2;
-}
-/* ================================================================ */
