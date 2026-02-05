@@ -1,5 +1,8 @@
-// #define ENABLE_IT
+#define ENABLE_IT
 #ifdef ENABLE_IT
+/**
+ * XY 平面运动，但有积分漂移，重力成分未完全消除
+ */
 
 #include "inc/alg_posture.h"
 #include "inc/alg_position.h"
@@ -9,12 +12,26 @@
 #include <stdbool.h>
 #include <string.h>
 
+
+// ------------------------------------------------------------
+// Debug switch (you can hook your own logger via ALG_DEBUG_PRINTF)
+#define ENABLE_DEBUG_LOG
+#ifdef ENABLE_DEBUG_LOG
+#ifndef ALG_DEBUG_PRINTF
+#define ALG_DEBUG_PRINTF(...) printk(__VA_ARGS__)
+#endif
+#else
+#ifndef ALG_DEBUG_PRINTF
+#define ALG_DEBUG_PRINTF(...) do { (void)0; } while (0)
+#endif
+#endif
+
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
 // ------------------------------------------------------------
-// Notes / Assumptions (matches your previous implementation):
+// Notes / Assumptions:
 // - imu_data_t:
 //     accel: mg (1 g = 1000 mg)
 //     gyro : dps (deg/s)
@@ -75,6 +92,9 @@ typedef struct {
   float ax_f, ay_f, az_f;
 
   // gravity magnitude reference in mg (normally ~1000)
+
+  // Slow DC remover mean on DEVICE X/Y (m/s^2)
+  float mean_ax, mean_ay;
   float g_ref_mg;
 
   world_posture_t last;
@@ -526,19 +546,16 @@ world_position_t alg_position_update(const world_posture_t *posture,
     // reset filters
     pos_state.bx = pos_state.by = pos_state.bz = 0.0f;
     pos_state.ax_f = pos_state.ay_f = pos_state.az_f = 0.0f;
+    pos_state.mean_ax = pos_state.mean_ay = 0.0f;
     pos_state.vx = pos_state.vy = pos_state.vz = 0.0f;
     pos_state.x = pos_state.y = pos_state.z = 0.0f;
     return out;
   }
 
-#ifndef ALG_POSITION_SAMPLE_US
-#define ALG_POSITION_SAMPLE_US 10000U
-#endif
-
   // Fixed-rate integration. If you have real timestamps, replace this with measured dt.
-  float dt = (float)ALG_POSITION_SAMPLE_US / 1000000.0f;
+  float dt = (float)posture_config.sample_us / 1000000.0f;
   if (!isfinite(dt) || dt <= 0.0f) {
-    dt = 0.01f;
+    dt = 0.01f; // 10ms default sampling time
   }
   // clamp dt against occasional spikes
   if (dt < 0.0005f) dt = 0.0005f;
@@ -561,25 +578,30 @@ world_position_t alg_position_update(const world_posture_t *posture,
   float lin_by_mg = ay_mg - state.gby * pos_state.g_ref_mg;
   float lin_bz_mg = az_mg - state.gbz * pos_state.g_ref_mg;
 
-  // Rotate BODY linear accel -> WORLD linear accel (still mg)
-  float lin_wx_mg, lin_wy_mg, lin_wz_mg;
-  rotate_body_to_world(&state, lin_bx_mg, lin_by_mg, lin_bz_mg, &lin_wx_mg, &lin_wy_mg, &lin_wz_mg);
-
-  // mg -> m/s^2
+  // Convert BODY linear accel (still mg) -> m/s^2
+  // NOTE: Output requested is in DEVICE(BODY) XY, so we keep everything in BODY frame.
   const float mg_to_mps2 = 0.00980665f;
-  float lin_wx = lin_wx_mg * mg_to_mps2;
-  float lin_wy = lin_wy_mg * mg_to_mps2;
-  float lin_wz = lin_wz_mg * mg_to_mps2;
+  float lin_bx = lin_bx_mg * mg_to_mps2;
+  float lin_by = lin_by_mg * mg_to_mps2;
+  float lin_bz = lin_bz_mg * mg_to_mps2;
+
+  // ------------------------------------------------------------
+  // OUTPUT DEFINITION (per your latest spec):
+  //   - 2D displacement in DEVICE(BODY) X-Y plane.
+  //   - Ignore motion along DEVICE Z axis (treat as lateral/sideways).
+  // In world terms: forward/back (X) and up/down (Y) are kept, left/right (Z) ignored.
+  // We still keep lin_bz for stationary detection (to avoid ZUPT while moving sideways),
+  // but we do NOT integrate it into position.
 
   // Optional: clamp extreme spikes (helps with occasional glitches)
   {
-    float n = norm3(lin_wx, lin_wy, lin_wz);
+    float n = norm3(lin_bx, lin_by, lin_bz);
     const float n_max = 30.0f; // ~3 g
     if (isfinite(n) && n > n_max && n > 0.0f) {
       float s = n_max / n;
-      lin_wx *= s;
-      lin_wy *= s;
-      lin_wz *= s;
+      lin_bx *= s;
+      lin_by *= s;
+      lin_bz *= s;
     }
   }
 
@@ -590,7 +612,7 @@ world_position_t alg_position_update(const world_posture_t *posture,
   float dp = angle_diff_deg(p.pitch, pos_state.last.pitch);
   float dr = angle_diff_deg(p.roll, pos_state.last.roll);
   float max_d = fmaxf(fmaxf(fabsf(dy), fabsf(dp)), fabsf(dr));
-  float lin_norm = norm3(lin_wx, lin_wy, lin_wz);
+  float lin_norm = norm3(lin_bx, lin_by, lin_bz);
 
   const float stationary_angle_deg = 1.0f;
   const float stationary_lin_mps2 = 0.25f;
@@ -606,14 +628,16 @@ world_position_t alg_position_update(const world_posture_t *posture,
   if (tau_bias_s < 0.05f) tau_bias_s = 0.05f;
   float alpha_bias = dt / (tau_bias_s + dt);
 
-  pos_state.bx = lpf_update(pos_state.bx, lin_wx, alpha_bias);
-  pos_state.by = lpf_update(pos_state.by, lin_wy, alpha_bias);
-  pos_state.bz = lpf_update(pos_state.bz, lin_wz, alpha_bias);
+  pos_state.bx = lpf_update(pos_state.bx, lin_bx, alpha_bias);
+  pos_state.by = lpf_update(pos_state.by, lin_by, alpha_bias);
+  pos_state.bz = lpf_update(pos_state.bz, lin_bz, alpha_bias);
 
   // Subtract bias (high-pass effect)
-  lin_wx -= pos_state.bx;
-  lin_wy -= pos_state.by;
-  lin_wz -= pos_state.bz;
+  lin_bx -= pos_state.bx;
+  lin_by -= pos_state.by;
+  /* lin_bz kept for stationarity only; ignore in integration */
+  (void)lin_bz;
+
 
   // ------------------------------------------------------------
   // Step 4) Low-pass linear accel (makes trajectory "presentable")
@@ -622,9 +646,28 @@ world_position_t alg_position_update(const world_posture_t *posture,
   float tau_acc = 1.0f / (2.0f * (float)M_PI * fc_acc_hz);
   float alpha_acc = dt / (tau_acc + dt);
 
-  pos_state.ax_f = lpf_update(pos_state.ax_f, lin_wx, alpha_acc);
-  pos_state.ay_f = lpf_update(pos_state.ay_f, lin_wy, alpha_acc);
-  pos_state.az_f = lpf_update(pos_state.az_f, lin_wz, alpha_acc);
+  pos_state.ax_f = lpf_update(pos_state.ax_f, lin_bx, alpha_acc);
+  pos_state.ay_f = lpf_update(pos_state.ay_f, lin_by, alpha_acc);
+  pos_state.az_f = 0.0f; // ignore DEVICE Z axis for 2D XY output
+
+
+  // ------------------------------------------------------------
+  // Step 4.5) DC remover on DEVICE X/Y (key for removing "constant pull" -> spiral)
+  //   - Track a slow-varying mean and subtract it before integration.
+  //   - When stationary, converge faster so we don't get a "kick" when moving again.
+  // ------------------------------------------------------------
+  float tau_mean_s = stationary ? 0.30f : 2.0f; // seconds
+  float alpha_mean = dt / (tau_mean_s + dt);
+  pos_state.mean_ax = lpf_update(pos_state.mean_ax, pos_state.ax_f, alpha_mean);
+  pos_state.mean_ay = lpf_update(pos_state.mean_ay, pos_state.ay_f, alpha_mean);
+
+  float ax_use = pos_state.ax_f - pos_state.mean_ax;
+  float ay_use = pos_state.ay_f - pos_state.mean_ay;
+
+#ifdef ENABLE_DEBUG_LOG
+  // You can hook this macro to your logger if needed.
+  ALG_DEBUG_PRINTF("acc_use=%.3f %.3f\n", ax_use, ay_use);
+#endif
 
   // ------------------------------------------------------------
   // Step 5) ZUPT + gravity magnitude update when stationary
@@ -637,7 +680,7 @@ world_position_t alg_position_update(const world_posture_t *posture,
     // update gravity magnitude reference (mg) slowly using raw accel magnitude
     const float g_alpha = 0.02f;
     float acc_norm_mg = norm3(ax_mg, ay_mg, az_mg);
-    if (isfinite(acc_norm_mg) && acc_norm_mg > 100.0f) {
+    if (isfinite(acc_norm_mg) && acc_norm_mg > 900.0f && acc_norm_mg < 1100.0f) {
       pos_state.g_ref_mg = lpf_update(pos_state.g_ref_mg, acc_norm_mg, g_alpha);
     }
 
@@ -645,16 +688,20 @@ world_position_t alg_position_update(const world_posture_t *posture,
     pos_state.ax_f *= 0.5f;
     pos_state.ay_f *= 0.5f;
     pos_state.az_f *= 0.5f;
+
+    // also pull DC mean toward current filtered accel (prevents spiral kick after ZUPT)
+    pos_state.mean_ax = lpf_update(pos_state.mean_ax, pos_state.ax_f, 0.5f);
+    pos_state.mean_ay = lpf_update(pos_state.mean_ay, pos_state.ay_f, 0.5f);
   }
 
   // ------------------------------------------------------------
   // Step 6) Integrate velocity/position
   // ------------------------------------------------------------
-  pos_state.vx += pos_state.ax_f * dt;
-  pos_state.vy += pos_state.ay_f * dt;
-  pos_state.vz += pos_state.az_f * dt;
-
-  // velocity leak to keep trajectory bounded
+  pos_state.vx += ax_use * dt;
+  pos_state.vy += ay_use * dt;
+  // ignore device Z displacement
+  pos_state.vz = 0.0f;
+// velocity leak to keep trajectory bounded
   const float vel_leak = 0.08f; // stronger default to avoid runaway
   float k = 1.0f - vel_leak * dt;
   if (k < 0.0f) k = 0.0f;
@@ -665,22 +712,18 @@ world_position_t alg_position_update(const world_posture_t *posture,
 
   pos_state.x += pos_state.vx * dt;
   pos_state.y += pos_state.vy * dt;
-  pos_state.z += pos_state.vz * dt;
-
+  pos_state.z = 0.0f;
   pos_state.last = p;
 
   // Output requirement:
-//   1) Only need 2D trajectory in DEVICE(BODY) coordinates (x/y).
-//   2) Ignore motion along device Z axis: set output z = 0.
-// We keep integrating in WORLD for stability, then convert the integrated
-// position into BODY frame at the current posture.
-float px_b = 0.0f, py_b = 0.0f, pz_b = 0.0f;
-rotate_world_to_body(&state, pos_state.x, pos_state.y, pos_state.z, &px_b, &py_b, &pz_b);
-
-out.x = px_b;
-out.y = py_b;
-out.z = 0.0f;
-return out;
+  //   1) Only need 2D trajectory in DEVICE(BODY) coordinates (x/y).
+  //   2) Ignore motion along device Z axis: set output z = 0.
+  // We keep integrating in WORLD for stability, then convert the integrated
+  // position into BODY frame at the current posture.
+  out.x = pos_state.x;
+  out.y = pos_state.y;
+  out.z = 0.0f;
+  return out;
 }
 
 bool alg_posture_is_yaw_balanced(void)
@@ -688,7 +731,7 @@ bool alg_posture_is_yaw_balanced(void)
   if (!state.valid) {
     return false;
   }
-  if (posture_config.balance_yaw_thresh < 0.0f) {
+  if (posture_config.balance_yaw_thresh <= 0.0f) {
     return true;
   }
   float dy = angle_diff_deg(state.current.yaw, posture_config.balance_yaw);
@@ -700,7 +743,7 @@ bool alg_posture_is_pitch_balanced(void)
   if (!state.valid) {
     return false;
   }
-  if (posture_config.balance_pitch_thresh < 0.0f) {
+  if (posture_config.balance_pitch_thresh <= 0.0f) {
     return true;
   }
   float dp = angle_diff_deg(state.current.pitch, posture_config.balance_pitch);
@@ -712,7 +755,7 @@ bool alg_posture_is_roll_balanced(void)
   if (!state.valid) {
     return false;
   }
-  if (posture_config.balance_roll_thresh < 0.0f) {
+  if (posture_config.balance_roll_thresh <= 0.0f) {
     return true;
   }
   float dr = angle_diff_deg(state.current.roll, posture_config.balance_roll);

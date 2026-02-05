@@ -4,17 +4,26 @@
 #include "inc/task_imu.h"
 #include "inc/pba.h"
 
+int event_after_startup()
+{
+  ble_init();
+  task_imu_init();
+  task_imu_start();
+  return 0;
+}
+int event_before_shutdown()
+{
+  task_imu_stop();
+  task_imu_uninit();
+  ble_uninit();
+  return 0;
+}
+
 
 int main(void)
 {
-  pba_init();
-
   // 初始化
-
-  ble_init();
-  task_imu_init();
-
-  task_imu_start();
+  pba_init();
 
   for(;;) {
     k_msleep(1000);

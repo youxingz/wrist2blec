@@ -47,5 +47,7 @@ int ble_init()
 
 int ble_uninit()
 {
+  ble_adv_stop();
+  bt_disable();
   return 0;
 }

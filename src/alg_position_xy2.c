@@ -561,25 +561,22 @@ world_position_t alg_position_update(const world_posture_t *posture,
   float lin_by_mg = ay_mg - state.gby * pos_state.g_ref_mg;
   float lin_bz_mg = az_mg - state.gbz * pos_state.g_ref_mg;
 
-  // Rotate BODY linear accel -> WORLD linear accel (still mg)
-  float lin_wx_mg, lin_wy_mg, lin_wz_mg;
-  rotate_body_to_world(&state, lin_bx_mg, lin_by_mg, lin_bz_mg, &lin_wx_mg, &lin_wy_mg, &lin_wz_mg);
-
-  // mg -> m/s^2
-  const float mg_to_mps2 = 0.00980665f;
-  float lin_wx = lin_wx_mg * mg_to_mps2;
-  float lin_wy = lin_wy_mg * mg_to_mps2;
-  float lin_wz = lin_wz_mg * mg_to_mps2;
+  // Convert BODY linear accel (still mg) -> m/s^2
+// NOTE: Output requested is in DEVICE(BODY) XY, so we keep everything in BODY frame.
+const float mg_to_mps2 = 0.00980665f;
+float lin_bx = lin_bx_mg * mg_to_mps2;
+float lin_by = lin_by_mg * mg_to_mps2;
+float lin_bz = lin_bz_mg * mg_to_mps2;
 
   // Optional: clamp extreme spikes (helps with occasional glitches)
   {
-    float n = norm3(lin_wx, lin_wy, lin_wz);
+    float n = norm3(lin_bx, lin_by, lin_bz);
     const float n_max = 30.0f; // ~3 g
     if (isfinite(n) && n > n_max && n > 0.0f) {
       float s = n_max / n;
-      lin_wx *= s;
-      lin_wy *= s;
-      lin_wz *= s;
+      lin_bx *= s;
+      lin_by *= s;
+      lin_bz *= s;
     }
   }
 
@@ -590,7 +587,7 @@ world_position_t alg_position_update(const world_posture_t *posture,
   float dp = angle_diff_deg(p.pitch, pos_state.last.pitch);
   float dr = angle_diff_deg(p.roll, pos_state.last.roll);
   float max_d = fmaxf(fmaxf(fabsf(dy), fabsf(dp)), fabsf(dr));
-  float lin_norm = norm3(lin_wx, lin_wy, lin_wz);
+  float lin_norm = norm3(lin_bx, lin_by, lin_bz);
 
   const float stationary_angle_deg = 1.0f;
   const float stationary_lin_mps2 = 0.25f;
@@ -606,14 +603,14 @@ world_position_t alg_position_update(const world_posture_t *posture,
   if (tau_bias_s < 0.05f) tau_bias_s = 0.05f;
   float alpha_bias = dt / (tau_bias_s + dt);
 
-  pos_state.bx = lpf_update(pos_state.bx, lin_wx, alpha_bias);
-  pos_state.by = lpf_update(pos_state.by, lin_wy, alpha_bias);
-  pos_state.bz = lpf_update(pos_state.bz, lin_wz, alpha_bias);
+  pos_state.bx = lpf_update(pos_state.bx, lin_bx, alpha_bias);
+  pos_state.by = lpf_update(pos_state.by, lin_by, alpha_bias);
+  pos_state.bz = lpf_update(pos_state.bz, lin_bz, alpha_bias);
 
   // Subtract bias (high-pass effect)
-  lin_wx -= pos_state.bx;
-  lin_wy -= pos_state.by;
-  lin_wz -= pos_state.bz;
+  lin_bx -= pos_state.bx;
+  lin_by -= pos_state.by;
+  lin_bz -= pos_state.bz;
 
   // ------------------------------------------------------------
   // Step 4) Low-pass linear accel (makes trajectory "presentable")
@@ -622,9 +619,9 @@ world_position_t alg_position_update(const world_posture_t *posture,
   float tau_acc = 1.0f / (2.0f * (float)M_PI * fc_acc_hz);
   float alpha_acc = dt / (tau_acc + dt);
 
-  pos_state.ax_f = lpf_update(pos_state.ax_f, lin_wx, alpha_acc);
-  pos_state.ay_f = lpf_update(pos_state.ay_f, lin_wy, alpha_acc);
-  pos_state.az_f = lpf_update(pos_state.az_f, lin_wz, alpha_acc);
+  pos_state.ax_f = lpf_update(pos_state.ax_f, lin_bx, alpha_acc);
+  pos_state.ay_f = lpf_update(pos_state.ay_f, lin_by, alpha_acc);
+  pos_state.az_f = lpf_update(pos_state.az_f, lin_bz, alpha_acc);
 
   // ------------------------------------------------------------
   // Step 5) ZUPT + gravity magnitude update when stationary
@@ -652,9 +649,9 @@ world_position_t alg_position_update(const world_posture_t *posture,
   // ------------------------------------------------------------
   pos_state.vx += pos_state.ax_f * dt;
   pos_state.vy += pos_state.ay_f * dt;
-  pos_state.vz += pos_state.az_f * dt;
-
-  // velocity leak to keep trajectory bounded
+  // ignore device Z displacement
+  pos_state.vz = 0.0f;
+// velocity leak to keep trajectory bounded
   const float vel_leak = 0.08f; // stronger default to avoid runaway
   float k = 1.0f - vel_leak * dt;
   if (k < 0.0f) k = 0.0f;
@@ -665,22 +662,18 @@ world_position_t alg_position_update(const world_posture_t *posture,
 
   pos_state.x += pos_state.vx * dt;
   pos_state.y += pos_state.vy * dt;
-  pos_state.z += pos_state.vz * dt;
-
-  pos_state.last = p;
+  pos_state.z = 0.0f;
+pos_state.last = p;
 
   // Output requirement:
 //   1) Only need 2D trajectory in DEVICE(BODY) coordinates (x/y).
 //   2) Ignore motion along device Z axis: set output z = 0.
 // We keep integrating in WORLD for stability, then convert the integrated
 // position into BODY frame at the current posture.
-float px_b = 0.0f, py_b = 0.0f, pz_b = 0.0f;
-rotate_world_to_body(&state, pos_state.x, pos_state.y, pos_state.z, &px_b, &py_b, &pz_b);
-
-out.x = px_b;
-out.y = py_b;
-out.z = 0.0f;
-return out;
+out.x = pos_state.x;
+  out.y = pos_state.y;
+  out.z = 0.0f;
+  return out;
 }
 
 bool alg_posture_is_yaw_balanced(void)

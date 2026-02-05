@@ -25,3 +25,6 @@ bool pba_led_red(bool on);
 
 bool pba_motor_front_en(bool on);
 bool pba_motor_back_en(bool on);
+
+int event_after_startup();
+int event_before_shutdown();
