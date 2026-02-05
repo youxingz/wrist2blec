@@ -2,23 +2,23 @@
 
 typedef struct {
   float temperature;
-  float ax;
+  float ax;  // Body Acc
   float ay;
   float az;
-  float gx;
+  float gx;  // Body Gyro
   float gy;
   float gz;
-  float mx;
+  float mx;  // Body Mag
   float my;
   float mz;
 } imu_data_t;
 
 typedef struct {
   // float temperature;
-  float ax;
+  float ax;     // World Acc
   float ay;
   float az;
-  float yaw;
+  float yaw;    // World YPR
   float pitch;
   float roll;
 } world_posture_t;
@@ -26,7 +26,7 @@ typedef struct {
 typedef struct {
   float x;
   float y;
-  float z;
+  float z;      // always zero, ignore it.
   float yaw;
   float pitch;
   float roll;

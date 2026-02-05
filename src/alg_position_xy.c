@@ -91,10 +91,10 @@ typedef struct {
   // World-frame linear-acc filtered (m/s^2) used for integration (after bias removal).
   float ax_f, ay_f, az_f;
 
-  // gravity magnitude reference in mg (normally ~1000)
-
   // Slow DC remover mean on DEVICE X/Y (m/s^2)
   float mean_ax, mean_ay;
+
+  // gravity magnitude reference in mg (normally ~1000)
   float g_ref_mg;
 
   world_posture_t last;
@@ -102,7 +102,7 @@ typedef struct {
 } position_state_t;
 
 static position_state_t pos_state = {
-  .g_ref_mg = 1000.0f,
+  .g_ref_mg = 1000.0f, // 后续会随着运行不断校准，only at stationary.
 };
 
 // ------------------------ small helpers ------------------------
@@ -624,7 +624,8 @@ world_position_t alg_position_update(const world_posture_t *posture,
   //   - We track and subtract a slow-varying "DC" component from a_lin_world.
   //   - When stationary, adapt faster and also do ZUPT.
   // ------------------------------------------------------------
-  float tau_bias_s = stationary ? 0.35f : 2.0f; // stationary: fast; moving: slow
+  // float tau_bias_s = stationary ? 0.35f : 2.0f; // stationary: fast; moving: slow
+  float tau_bias_s = stationary ? 0.35f : 0.072f; // stationary: slow; moving: faster but not too fast.
   if (tau_bias_s < 0.05f) tau_bias_s = 0.05f;
   float alpha_bias = dt / (tau_bias_s + dt);
 
