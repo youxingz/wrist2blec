@@ -195,6 +195,7 @@ static int worker_init()
 static int convert2buf(uint16_t index,
                       imu_data_t * imu, world_position_t * position, 
                       bool is_yaw_balanced, bool is_pitch_balanced, bool is_roll_balanced,
+                      bool alert,
                       uint8_t * buf)
 {
   // ts:
@@ -256,6 +257,7 @@ static int convert2buf(uint16_t index,
   buf[i++] = (is_yaw_balanced ? 0x01 : 0x00);
   buf[i++] = (is_pitch_balanced ? 0x01 : 0x00);
   buf[i++] = (is_roll_balanced ? 0x01 : 0x00);
+  buf[i++] = (alert ? 0x01 : 0x00);
   return i;
 }
 
@@ -306,7 +308,11 @@ static void looper_work_handler(struct k_work *work)
     bool is_pitch_balanced = alg_posture_is_pitch_balanced();
     bool is_roll_balanced = alg_posture_is_roll_balanced();
 
-    bool alert = !(is_yaw_balanced && is_pitch_balanced && is_roll_balanced);
+
+    bool alert = false;
+    if (is_pitch_balanced) {
+      alert = !(is_yaw_balanced && is_roll_balanced);
+    }
     // 亮灯 + 震动
     pba_motor_front_en(alert);
     pba_led_green(!alert);
@@ -318,9 +324,9 @@ static void looper_work_handler(struct k_work *work)
     // if BLE enabled, commit to GATT.
     // size: 2 + (1 + 9 + 6) * 2 = 34 bytes
     // if ((ble_commit_count++ % 1U) == 0U) {
-    #define CM_BUFFER_SIZE 37
+    #define CM_BUFFER_SIZE 38
     uint8_t buf[CM_BUFFER_SIZE];
-    int len = convert2buf(dindex, &current, &position, is_yaw_balanced, is_pitch_balanced, is_roll_balanced, buf);
+    int len = convert2buf(dindex, &current, &position, is_yaw_balanced, is_pitch_balanced, is_roll_balanced, alert, buf);
     ble_aaef_notify_commit(buf, len);
     // }
   }

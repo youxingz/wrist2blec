@@ -8,7 +8,7 @@
 LOG_MODULE_REGISTER(AAE, LOG_LEVEL_INF);
 
 #define STATE_CODE_LEN 20
-#define STREAM_BUFFER_LEN 37
+#define STREAM_BUFFER_LEN 38
 
 typedef struct {
   uint8_t state_codes[STATE_CODE_LEN];
