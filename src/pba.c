@@ -28,43 +28,14 @@ static int on_pba_charging(){}
 static int on_pba_charged(){}
 static int on_pba_button_press()
 {
-  static int64_t press_time_ms = -1;
-  int64_t now = k_uptime_get();
-  int level = nrf_gpio_pin_read(PIN_BUTTON); // 0=按下(接地), 1=松开(上拉)
-
-  if (level == 0) {
-    press_time_ms = now;
-    return 0;
-  }
-
-  if (press_time_ms >= 0) {
-    int64_t duration_ms = now - press_time_ms;
-    press_time_ms = -1;
-    if (duration_ms >= 2000) {
-      // LOG_INF("button long press: %lld ms", duration_ms);
-      // 关蓝牙+关机
-      event_before_shutdown();
-      pba_power_en(false);
-      // 此处系统应当挂掉，如果没有，则自动重启即可：
-      sys_reboot(SYS_REBOOT_WARM);
-    } else {
-      // LOG_INF("button short press: %lld ms", duration_ms);
-      // 短按逻辑暂不处理
-    }
-  }
-  return 0;
+  // do nothing.
 }
-
-static nrfx_gpiote_t gpiote_inst = NRFX_GPIOTE_INSTANCE(NRF_GPIOTE_INST_GET(0));
-
-static void pba_button_isr(nrfx_gpiote_pin_t pin,
-                           nrfx_gpiote_trigger_t trigger,
-                           void *p_context)
+static int on_pba_button_long_press() // 长按关机
 {
-  ARG_UNUSED(pin);
-  ARG_UNUSED(trigger);
-  ARG_UNUSED(p_context);
-  on_pba_button_press();
+  event_before_shutdown();
+  pba_power_en(false);
+  sys_reboot(SYS_REBOOT_WARM);
+  k_sleep(K_FOREVER);
 }
 
 int pba_init()
@@ -89,40 +60,49 @@ int pba_init()
 
   nrf_gpio_cfg_input(PIN_CHARGE_INT, NRF_GPIO_PIN_NOPULL);
   nrf_gpio_cfg_input(PIN_CHARGE_DONE, NRF_GPIO_PIN_NOPULL);
-
-  if (!nrfx_gpiote_init_check(&gpiote_inst)) {
-    int err = nrfx_gpiote_init(&gpiote_inst, NRFX_GPIOTE_DEFAULT_CONFIG_IRQ_PRIORITY);
-    if (err != 0 && err != -EALREADY) {
-      LOG_ERR("gpiote init failed: %d", err);
-      return -EIO;
-    }
-  }
-
-  static const nrf_gpio_pin_pull_t button_pull = NRF_GPIO_PIN_PULLUP;
-  static const nrfx_gpiote_trigger_config_t button_trigger = {
-    .trigger = NRFX_GPIOTE_TRIGGER_TOGGLE,
-    .p_in_channel = NULL,
-  };
-  static const nrfx_gpiote_handler_config_t button_handler = {
-    .handler = pba_button_isr,
-    .p_context = NULL,
-  };
-  static const nrfx_gpiote_input_pin_config_t button_cfg = {
-    .p_pull_config = &button_pull,
-    .p_trigger_config = &button_trigger,
-    .p_handler_config = &button_handler,
-  };
-
-  int err = nrfx_gpiote_input_configure(&gpiote_inst, PIN_BUTTON, &button_cfg);
-  if (err != 0) {
-    LOG_ERR("button init failed: %d", err);
-    return -EIO;
-  }
-
-  nrfx_gpiote_trigger_enable(&gpiote_inst, PIN_BUTTON, true);
+  nrf_gpio_cfg_input(PIN_BUTTON, NRF_GPIO_PIN_PULLUP);
 
   return event_after_startup();
   // return 0;
+}
+
+// 10ms 一次刷新
+int pba_loop()
+{
+  static int64_t press_time_ms = -1;
+  int64_t now = k_uptime_get();
+  int level = nrf_gpio_pin_read(PIN_BUTTON); // 0=按下(接地), 1=松开(上拉)
+
+
+  if (level == 1) { // 松开/平时状态
+    if (press_time_ms >= 0) {
+      int64_t duration_ms = now - press_time_ms;
+      if (duration_ms >= 1000) {
+        // long press.
+        on_pba_button_long_press();
+      } else {
+        on_pba_button_press();
+      }
+    }
+    press_time_ms = -1;
+    return 0;
+  }
+
+  if (level == 0) { // pressed.
+    if (press_time_ms == -1) {
+      press_time_ms = now; // 刚按下
+      return 0;
+    } else {
+      int64_t duration_ms = now - press_time_ms;
+      if (duration_ms >= 1000) {
+        // long press.
+        on_pba_button_long_press();
+        return 0;
+      }
+    }
+  }
+
+  return 0;
 }
 
 bool pba_power_en(bool on)
@@ -131,6 +111,13 @@ bool pba_power_en(bool on)
     nrf_gpio_pin_set(PIN_POWER_EN);
   } else {
     nrf_gpio_pin_clear(PIN_POWER_EN);
+    // 关闭所有 LED 灯
+    pba_led_green(false);
+    pba_led_blue(false);
+    pba_led_red(false);
+    // 关闭所有电机
+    pba_motor_front_en(false);
+    pba_motor_back_en(false);
   }
   return true;
 }

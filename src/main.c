@@ -26,10 +26,16 @@ int main(void)
   // 初始化
   pba_init();
 
+
+  k_msleep(4000); // 开机后的 5s 内不允许按钮逻辑，否则容易重复触发开关机操作
+
   for(;;) {
-    k_msleep(1000);
+    k_msleep(1);
+    pba_loop();
     static uint32_t count = 0;
-    printk("live! [%d]\n", count++);
+    if (count++ % 1000 == 0) {
+      printk("live! [%d]\n", count);
+    }
   }
   return 0;
 }

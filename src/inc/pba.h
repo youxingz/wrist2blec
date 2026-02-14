@@ -17,6 +17,7 @@
 
 
 int pba_init();
+int pba_loop();
 bool pba_power_en(bool on);
 
 bool pba_led_blue(bool on);
