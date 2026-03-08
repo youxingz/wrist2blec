@@ -24,6 +24,7 @@ world_posture_t alg_posture_update(imu_data_t * data);
 bool alg_posture_is_yaw_balanced(void);
 bool alg_posture_is_pitch_balanced(void);
 bool alg_posture_is_roll_balanced(void);
+bool alg_posture_is_active(void); // 活跃阈值可自定义
 
 int alg_posture_update_threshold(uint8_t axis, float threshold_deg);
 void alg_posture_get_thresholds(float *yaw, float *pitch, float *roll);

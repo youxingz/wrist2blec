@@ -7,21 +7,10 @@
 #include <nrfx_gpiote.h>
 LOG_MODULE_REGISTER(pba, LOG_LEVEL_INF);
 
-typedef enum {
-  LED_OTA = 0,
-  LED_LOW_POWER,
-  LED_POWER_ON,
-  LED_POWER_OFF,
-  LED_BAD_GES,
-  LED_GOOD_GES,
-  LED_CHARGING,
-  LED_CHARGED,
-} led_status_t;
-static void led_status_update(led_status_t new_status);
 
 static led_status_t led_current_status = LED_POWER_OFF;
 static bool led_status_ended = true;
-static void led_status_update(led_status_t new_status) {
+void pba_led_status_update(led_status_t new_status) {
   // 根据优先级进行排序，如果有高优先级的在进行，则低优先级无法打断
   if (new_status > led_current_status) { // && !led_status_ended
     led_current_status = new_status;
@@ -30,7 +19,6 @@ static void led_status_update(led_status_t new_status) {
     led_current_status = new_status; // 弱更新，等待当前状态结束后再更新显示
   }
 }
-
 
 static int64_t last_wtg_alert  = 0;
 static int64_t last_wtg_stable = 0;
@@ -85,7 +73,7 @@ static int on_pba_button_press()
 }
 static int on_pba_button_long_press() // 长按关机
 {
-  led_status_update(LED_POWER_OFF);
+  pba_led_status_update(LED_POWER_OFF);
   led_status_ended = true; // force update led status.
   k_msleep(2000); // 长按 2s 后关机
   pba_power_off();
@@ -124,7 +112,7 @@ int pba_init()
   nrf_gpio_cfg_input(PIN_CHARGE_DONE, NRF_GPIO_PIN_NOPULL);
   nrf_gpio_cfg_input(PIN_BUTTON, NRF_GPIO_PIN_PULLUP);
 
-  led_status_update(LED_POWER_ON);
+  pba_led_status_update(LED_POWER_ON);
 
   return event_after_startup();
   // return 0;
@@ -178,7 +166,7 @@ static void handle_on_charger() {
   }
 }
 
-static void handle_on_led_status_update(int64_t now) {
+static void handle_on_pba_led_status_update(int64_t now) {
   static led_status_t real_status;
   static int64_t led_low_power_from = 0;
   static int64_t led_power_on_from = 0;
@@ -332,7 +320,7 @@ int pba_loop()
   handle_on_charger();
 
   // led:
-  handle_on_led_status_update(now);
+  handle_on_pba_led_status_update(now);
 
   // wtg:
   hanlde_wtg(now);

@@ -318,6 +318,15 @@ static void looper_work_handler(struct k_work *work)
     pba_led_green(!alert);
     pba_led_red(alert);
 
+    pba_led_update();
+
+    if (alert) { // 10min 没 alert 会关机
+      pba_trigger_wtg_alert();
+    }
+    if (alg_posture_is_active()) { // 3min 没动会关机
+      pba_trigger_wtg_stable();
+    }
+
     // pos:
     world_position_t position = alg_position_update(&posture, &current);
 

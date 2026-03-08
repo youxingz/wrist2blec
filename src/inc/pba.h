@@ -16,6 +16,18 @@
 #define PIN_CHARGE_DONE NRF_GPIO_PIN_MAP(0, 9)
 
 
+typedef enum {
+  LED_OTA = 0,
+  LED_LOW_POWER,
+  LED_POWER_ON,
+  LED_POWER_OFF,
+  LED_BAD_GES,
+  LED_GOOD_GES,
+  LED_CHARGING,
+  LED_CHARGED,
+} led_status_t;
+void pba_led_status_update(led_status_t new_status);
+
 int pba_init();
 int pba_loop();
 bool pba_power_en(bool on);

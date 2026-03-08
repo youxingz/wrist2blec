@@ -105,6 +105,8 @@ static position_state_t pos_state = {
   .g_ref_mg = 1000.0f, // 后续会随着运行不断校准，only at stationary.
 };
 
+static bool pos_stationary = true;
+
 // ------------------------ small helpers ------------------------
 static inline bool is_finite3(float x, float y, float z)
 {
@@ -618,6 +620,7 @@ world_position_t alg_position_update(const world_posture_t *posture,
   const float stationary_lin_mps2 = 0.25f;
   bool stationary = (max_d < stationary_angle_deg) && (lin_norm < stationary_lin_mps2);
 
+  pos_stationary = stationary;
   // ------------------------------------------------------------
   // Step 3) Bias tracking in WORLD (key improvement):
   //   - A tiny constant error (bias or gravity projection) will integrate into a runaway line.
@@ -779,6 +782,11 @@ int alg_posture_update_threshold(uint8_t axis, float threshold_deg)
       return -EINVAL;
   }
   return 0;
+}
+
+bool alg_posture_is_active(void)
+{
+  return !pos_stationary;
 }
 
 void alg_posture_get_thresholds(float *yaw, float *pitch, float *roll)
