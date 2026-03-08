@@ -105,6 +105,13 @@ ssize_t ble_on_aae0_write_request(struct bt_conn *conn, const struct bt_gatt_att
     }
   }
 
+  if (method == 0x03) {
+    // config.
+    uint8_t motor_mode = data[3] & 0xFF;     // 电机模式：单/双
+    uint8_t hand_mode  = data[4] & 0xFF;     // 手方向
+    uint8_t precision_mode = data[5] & 0xFF; // 容忍度数
+    uint8_t viber_mode = data[6] & 0xFF;     // 震动模式
+  }
   return len;
 }
 
