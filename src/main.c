@@ -3,9 +3,11 @@
 #include "inc/ble.h"
 #include "inc/task_imu.h"
 #include "inc/pba.h"
+#include "inc/persistence.h"
 
 int event_after_startup()
 {
+  presistence_init();
   ble_init();
   task_imu_init();
   task_imu_start();

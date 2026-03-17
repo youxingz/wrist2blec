@@ -1,5 +1,7 @@
 #include "inc/pba.h"
 
+#include "inc/persistence.h"
+#include "inc/_common.h"
 #include <zephyr/kernel.h>
 #include <zephyr/sys/reboot.h>
 #include <zephyr/irq.h>
@@ -7,6 +9,9 @@
 #include <nrfx_gpiote.h>
 LOG_MODULE_REGISTER(pba, LOG_LEVEL_INF);
 
+
+#define LONG_PRESS_DURATION_MS 1000
+#define LONG_LONG_PRESS_DURATION_MS 8000
 
 static led_status_t led_current_status = LED_POWER_OFF;
 static bool led_status_ended = true;
@@ -86,18 +91,52 @@ static int on_pba_button_long_press() // 长按关机
   k_msleep(2000); // 长按 2s 后关机
   pba_power_off();
 }
+static int on_pba_button_long_long_press() // 超长按重置
+{
+  hard_lock();
+  unsigned int key = irq_lock();   // 关中断（可嵌套）
+  // 闪烁 LED 蓝色
+  // pba_led_status_update(LED_RESET_PR);
+
+  // in main thread:
+  for (int i = 0; i < 10; i++) {
+    pba_led_green(false);
+    pba_led_red(false);
+    pba_led_blue(i % 2 == 0);
+    k_msleep(300); // 快闪 5 次后重置
+  }
+
+  // do factory reset or other things if needed.
+  presistence_reset();
+  irq_unlock(key);
+
+  pba_power_off();
+  k_sleep(K_FOREVER);
+  hard_unlock();
+}
 
 bool pba_power_off()
 {
+  // disable all irq.
+  hard_lock();
+  unsigned int key = irq_lock();   // 关中断（可嵌套）
   event_before_shutdown();
   pba_power_en(false);
+  // wait until release button, otherwise可能会被误触发开机
+  while (nrf_gpio_pin_read(PIN_BUTTON) == 0) {
+    k_msleep(100);
+  }
   sys_reboot(SYS_REBOOT_WARM);
   k_sleep(K_FOREVER);
+  irq_unlock(key);
+  hard_unlock();
+
   return true;
 }
 
 int pba_init()
 {
+  hard_lock();
   PIN_OUTPUT(PIN_POWER_EN);
   k_msleep(800); // 长按 800ms 后开机
   pba_power_en(true);
@@ -122,6 +161,9 @@ int pba_init()
 
   pba_led_status_update(LED_POWER_ON);
 
+  presistence_init();
+
+  hard_unlock();
   return event_after_startup();
   // return 0;
 }
@@ -135,7 +177,10 @@ static void handle_on_button(int64_t now) {
   if (level == 1) { // 松开/平时状态
     if (press_time_ms >= 0) {
       int64_t duration_ms = now - press_time_ms;
-      if (duration_ms >= 1000) {
+      if (duration_ms >= LONG_LONG_PRESS_DURATION_MS) {
+        on_pba_button_long_long_press();
+      }
+      if (duration_ms >= LONG_PRESS_DURATION_MS) {
         // long press.
         on_pba_button_long_press();
       } else {
@@ -152,11 +197,15 @@ static void handle_on_button(int64_t now) {
       return 0;
     } else {
       int64_t duration_ms = now - press_time_ms;
-      if (duration_ms >= 1000) {
-        // long press.
-        on_pba_button_long_press();
+      if (duration_ms >= LONG_LONG_PRESS_DURATION_MS) {
+        on_pba_button_long_long_press();
         return 0;
       }
+      // if (duration_ms >= 1000) {
+      //   // long press.
+      //   on_pba_button_long_press();
+      //   return 0;
+      // }
     }
   }
 }
@@ -310,6 +359,17 @@ static void handle_on_pba_led_status_update(int64_t now) {
         pba_led_green(false);
       } else {
         pba_led_green(true);
+      }
+      led_status_ended = true;
+      break;
+    }
+    case LED_RESET_PR:
+    {
+      // 蓝灯闪烁
+      if (((now) / 300) % 2 == 0) {
+        pba_led_blue(false);
+      } else {
+        pba_led_blue(true);
       }
       led_status_ended = true;
       break;

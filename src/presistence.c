@@ -10,10 +10,23 @@ static int pre_cache[PERSISTENCE_KEY_LEN];
 
 int presistence_init()
 {
+  uint8_t code;
+  int err = storage_read(0x73, &code);
+  if (err) {
+    // bad case.
+  } else {
+    if (code == 0x42) {
+      // good case, do nothing.
+    } else {
+      // reset all to default value (err code).
+      presistence_reset();
+    }
+  }
+
   // init config here.
   for (int i = 0; i < PERSISTENCE_KEY_LEN; i++) {
     uint8_t value;
-    int err = storage_read(i, &value);
+    err = storage_read(i, &value);
     if (err < 0) {
       // LOG_INF("persistence read key %d failed (err %d)", i, err);
       pre_cache[i] = err; // default value: err code.
@@ -22,6 +35,15 @@ int presistence_init()
       // LOG_INF("persistence read key %d: %u", i, value);
     }
   }
+  return 0;
+}
+
+int presistence_reset() {
+  presistence_upsert(PERSISTENCE_KEY_ENABLE, 0);
+  for (int i = 1; i < PERSISTENCE_KEY_LEN; i++) {
+    presistence_upsert(i, 0x00); // default value: 0x00
+  }
+  storage_upsert(0x73, 0x42); // magic code to indicate initialized.
   return 0;
 }
 

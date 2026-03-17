@@ -1,4 +1,5 @@
 #pragma once
+#include <stdbool.h>
 
 typedef struct {
   float temperature;
@@ -31,3 +32,10 @@ typedef struct {
   float pitch;
   float roll;
 } world_position_t;
+
+bool hard_stub();
+
+bool hard_lock();
+
+bool hard_unlock();
+

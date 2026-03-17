@@ -766,6 +766,15 @@ bool alg_posture_is_roll_balanced(void)
   return fabsf(dr) <= posture_config.balance_roll_thresh;
 }
 
+bool alg_posture_is_roll_near_90_in(float degree)
+{
+  if (!state.valid) {
+    return false;
+  }
+  float dr = angle_diff_deg(fabsf(state.current.roll), 90.0f);
+  return fabsf(dr) <= degree;
+}
+
 int alg_posture_update_threshold(uint8_t axis, float threshold_deg)
 {
   switch (axis) {

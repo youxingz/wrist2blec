@@ -14,6 +14,8 @@ typedef enum {
 
 int presistence_init();
 
+int presistence_reset();
+
 int presistence_upsert(presistence_key_t key, uint8_t value);
 
 int presistence_get(presistence_key_t key, uint8_t *value);

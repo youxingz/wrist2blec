@@ -1,5 +1,6 @@
 #include "inc/ble_conn.h"
 
+#include "inc/_common.h"
 #include <zephyr/kernel.h>
 #include <errno.h>
 #include <zephyr/bluetooth/bluetooth.h>
@@ -133,6 +134,11 @@ int ble_adv_init(void)
 
 static void adv_restart_work_handler(struct k_work *work)
 {
+  if (hard_stub()) {
+    LOG_INF("Device is busy, retrying advertising start later...\n");
+    k_work_schedule(&adv_restart_work, K_MSEC(500));
+    return;
+  }
 	int err = ble_adv_start();
 
 	if (err == -EALREADY) {

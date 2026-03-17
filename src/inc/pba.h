@@ -18,6 +18,7 @@
 
 typedef enum {
   LED_OTA = 0,
+  LED_RESET_PR,
   LED_LOW_POWER,
   LED_POWER_ON,
   LED_POWER_OFF,

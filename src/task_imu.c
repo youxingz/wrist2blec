@@ -8,6 +8,7 @@
 #include "inc/pba.h"
 // #include "inc/storage.h"
 #include "inc/persistence.h"
+#include "inc/_common.h"
 
 #include <nrfx_timer.h>
 
@@ -265,6 +266,11 @@ static int convert2buf(uint16_t index,
 
 static void looper_work_handler(struct k_work *work)
 {
+  if (hard_stub()) {
+    LOG_INF("Device is busy, skipping this loop...\n");
+    k_work_reschedule(k_work_delayable_from_work(work), K_MSEC(500));
+    return;
+  }
 #ifdef ENABLE_TICKTOCK_ANALYSIS
   uint32_t start_cyc = k_cycle_get_32();
   static uint32_t exec_count = 0;
@@ -310,10 +316,10 @@ static void looper_work_handler(struct k_work *work)
     bool is_roll_balanced = alg_posture_is_roll_balanced();
 
     // 判断是否在 roll=±30° 附近，过线的时候震动
-    bool through_roll_30 = (fabsf(fabsf(posture.roll) - 30.0f) < 2.0f);
-    pba_motor_front_en(through_roll_30);
+    // bool through_roll_30 = alg_posture_is_roll_near_90_in(32.0f) && !alg_posture_is_roll_near_90_in(28.0f); // bad: (fabsf(fabsf(posture.roll) - 30.0f) < 2.0f);
+    // pba_motor_front_en(through_roll_30);
 
-    bool roll_in_30 = posture.roll > -30.0f && posture.roll < 30.0f;
+    bool roll_in_30 = alg_posture_is_roll_near_90_in(30.0f); // bad: posture.roll > -30.0f && posture.roll < 30.0f;
 
     // 加载电机模式配置（单电机/双电机）
     uint8_t motor_mode = 0; // 0: single motor, 1: dual motor
@@ -352,19 +358,23 @@ static void looper_work_handler(struct k_work *work)
         // alert = !(is_yaw_balanced && is_roll_balanced);
         switch(roll_hard) {
           case 0: { // easy, roll in [-9°, 9°]
-            alert = fabsf(posture.roll) > 9.0f;
+            // alert = fabsf(posture.roll) > 9.0f;
+            alert = !alg_posture_is_roll_near_90_in(9.0f);
             break;
           }
           case 1: { // medium, roll in [-7°, 7°]
-            alert = fabsf(posture.roll) > 7.0f;
+            // alert = fabsf(posture.roll) > 7.0f;
+            alert = !alg_posture_is_roll_near_90_in(7.0f);
             break;
           }
           case 2: { // hard, roll in [-5°, 5°]
-            alert = fabsf(posture.roll) > 5.0f;
+            // alert = fabsf(posture.roll) > 5.0f;
+            alert = !alg_posture_is_roll_near_90_in(5.0f);
             break;
           }
           default: {
-            alert = fabsf(posture.roll) > 9.0f; // default to easy
+            // alert = fabsf(posture.roll) > 9.0f; // default to easy
+            alert = !alg_posture_is_roll_near_90_in(9.0f);
             break;
           }
         }

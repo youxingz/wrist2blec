@@ -2,6 +2,7 @@
 #define ENABLE_FACA_SERVICE__
 
 #include "inc/ble_aaaa_priv.h"
+#include "inc/_common.h"
 
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/hci.h>
@@ -70,7 +71,12 @@ static K_WORK_DELAYABLE_DEFINE(looper_work, looper_work_handler);
 
 static void looper_work_handler(struct k_work *work)
 {
-  ble_aaef_loop();
+  if (hard_stub()) {
+    LOG_INF("Device is busy, retrying advertising start later...\n");
+    return;
+  } else {
+    ble_aaef_loop();
+  }
 	k_work_reschedule(k_work_delayable_from_work(work), K_MSEC(LOOPER_INTERVAL));
 }
 
