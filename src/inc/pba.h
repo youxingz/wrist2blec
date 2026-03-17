@@ -37,11 +37,13 @@ bool pba_led_blue(bool on);
 bool pba_led_green(bool on);
 bool pba_led_red(bool on);
 
+bool pba_motor_en(bool on, bool double_motor_mode);
 bool pba_motor_front_en(bool on);
 bool pba_motor_back_en(bool on);
 
 bool pba_trigger_wtg_alert();
 bool pba_trigger_wtg_stable();
+bool pba_trigger_wtg_0p8_motor_stable();
 
 int event_after_startup();
 int event_before_shutdown();

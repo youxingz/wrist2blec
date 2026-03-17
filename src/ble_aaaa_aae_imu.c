@@ -2,8 +2,7 @@
 #define BLE_AAAA_AAE_IMU_C__
 
 #include "inc/ble_aaaa_priv.h"
-#include "inc/storage.h"
-#include "inc/alg_posture.h"
+#include "inc/persistence.h"
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(AAE, LOG_LEVEL_INF);
 
@@ -40,7 +39,19 @@ ssize_t ble_on_aae0_read_request(struct bt_conn *conn, const struct bt_gatt_attr
   float yaw = 0.0f;
   float pitch = 0.0f;
   float roll = 0.0f;
-  alg_posture_get_thresholds(&yaw, &pitch, &roll);
+  // alg_posture_get_thresholds(&yaw, &pitch, &roll);
+  int err = presistence_get(PERSISTENCE_KEY_YAW_THRESHOLD, (uint8_t *)&yaw);
+  if (err < 0) {
+    LOG_INF("persistence get yaw threshold failed (err %d)", err);
+  }
+  err = presistence_get(PERSISTENCE_KEY_PITCH_THRESHOLD, (uint8_t *)&pitch);
+  if (err < 0) {
+    LOG_INF("persistence get pitch threshold failed (err %d)", err);
+  }
+  err = presistence_get(PERSISTENCE_KEY_ROLL_THRESHOLD, (uint8_t *)&roll);
+  if (err < 0) {
+    LOG_INF("persistence get roll threshold failed (err %d)", err);
+  }
   uint8_t value[3] = {
     (uint8_t)((int)yaw),
     (uint8_t)((int)pitch),
@@ -73,18 +84,18 @@ ssize_t ble_on_aae0_write_request(struct bt_conn *conn, const struct bt_gatt_att
       return len;
     }
 
-    uint8_t axis = data[3] & 0xFF;
+    presistence_key_t axis = (presistence_key_t)(data[3] & 0xFF);
     uint8_t threshold = data[4] & 0xFF;
     const char *axis_name = NULL;
 
     switch (axis) {
-      case ALG_POSTURE_AXIS_YAW:
+      case PERSISTENCE_KEY_YAW_THRESHOLD:
         axis_name = "yaw";
         break;
-      case ALG_POSTURE_AXIS_PITCH:
+      case PERSISTENCE_KEY_PITCH_THRESHOLD:
         axis_name = "pitch";
         break;
-      case ALG_POSTURE_AXIS_ROLL:
+      case PERSISTENCE_KEY_ROLL_THRESHOLD:
         axis_name = "roll";
         break;
       default:
@@ -92,25 +103,28 @@ ssize_t ble_on_aae0_write_request(struct bt_conn *conn, const struct bt_gatt_att
         return len;
     }
 
-    int err = storage_upsert(axis, threshold);
+    int err = presistence_upsert(axis, threshold);
     if (err < 0) {
       LOG_INF("cmd 0x02 storage write failed (err %d)", err);
     } else {
       LOG_INF("cmd 0x02 saved %s threshold: %u", axis_name, threshold);
     }
-
-    int alg_err = alg_posture_update_threshold(axis, (float)threshold);
-    if (alg_err < 0) {
-      LOG_INF("cmd 0x02 alg update failed (err %d)", alg_err);
-    }
   }
 
   if (method == 0x03) {
     // config.
-    uint8_t motor_mode = data[3] & 0xFF;     // 电机模式：单/双
-    uint8_t hand_mode  = data[4] & 0xFF;     // 手方向
-    uint8_t precision_mode = data[5] & 0xFF; // 容忍度数
-    uint8_t viber_mode = data[6] & 0xFF;     // 震动模式
+    int index = 3;
+    // uint8_t axis_x = data[index++] & 0xFF;       // x轴
+    // uint8_t axis_y = data[index++] & 0xFF;       // y轴
+    // uint8_t axis_z = data[index++] & 0xFF;       // z轴
+    uint8_t motor_mode = data[index++] & 0xFF;     // 电机模式：单/双
+    uint8_t hand_mode  = data[index++] & 0xFF;     // 手方向
+    uint8_t precision_mode = data[index++] & 0xFF; // 容忍度数
+    uint8_t viber_mode = data[index++] & 0xFF;     // 震动模式
+    presistence_upsert(PERSISTENCE_KEY_MOTOR_MODE, motor_mode);
+    presistence_upsert(PERSISTENCE_KEY_HAND_MODE, hand_mode);
+    presistence_upsert(PERSISTENCE_KEY_PRECISION_MODE, precision_mode);
+    presistence_upsert(PERSISTENCE_KEY_VIBER_MODE, viber_mode);
   }
   return len;
 }

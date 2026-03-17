@@ -22,15 +22,23 @@ void pba_led_status_update(led_status_t new_status) {
 
 static int64_t last_wtg_alert  = 0;
 static int64_t last_wtg_stable = 0;
+static int64_t last_wtg_0p8_motor_stable = 0;
+static bool motor_0p8_vibe_required = false;
 bool pba_trigger_wtg_alert()
 {
   last_wtg_alert = k_uptime_get();
   return true;
 }
+// 运动时会 trigger
 bool pba_trigger_wtg_stable()
 {
   last_wtg_stable = k_uptime_get();
   return true;
+}
+// 静止时会 trigger，return 是否允许震动
+bool pba_trigger_wtg_0p8_motor_stable() {
+  last_wtg_0p8_motor_stable = k_uptime_get();
+  return !(last_wtg_0p8_motor_stable - last_wtg_stable > 800); // 静止超过 0.8s 则不必再震动
 }
 
 static void hanlde_wtg(int64_t now) {
@@ -359,6 +367,18 @@ bool pba_led_blue(bool on)
 bool pba_led_red(bool on)
 {
   pin_out_update(PIN_LED_R, on);
+  return true;
+}
+
+bool pba_motor_en(bool on, bool double_motor_mode)
+{
+  if (double_motor_mode) {
+    pba_motor_front_en(on);
+    pba_motor_back_en(on);
+  } else {
+    pba_motor_front_en(on);
+    pba_motor_back_en(false);
+  }
   return true;
 }
 

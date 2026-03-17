@@ -6,7 +6,8 @@
 #include "inc/alg_position.h"
 #include "inc/ble_aaaa.h"
 #include "inc/pba.h"
-#include "inc/storage.h"
+// #include "inc/storage.h"
+#include "inc/persistence.h"
 
 #include <nrfx_timer.h>
 
@@ -83,13 +84,13 @@ int task_imu_init()
     .balance_roll_thresh = 10.0f,
   };
   uint8_t thresh = 0;
-  if (storage_read(ALG_POSTURE_AXIS_YAW, &thresh) == 0) {
+  if (presistence_get(PERSISTENCE_KEY_YAW_THRESHOLD, &thresh) == 0) {
     posture_config.balance_yaw_thresh = (float)thresh;
   }
-  if (storage_read(ALG_POSTURE_AXIS_PITCH, &thresh) == 0) {
+  if (presistence_get(PERSISTENCE_KEY_PITCH_THRESHOLD, &thresh) == 0) {
     posture_config.balance_pitch_thresh = (float)thresh;
   }
-  if (storage_read(ALG_POSTURE_AXIS_ROLL, &thresh) == 0) {
+  if (presistence_get(PERSISTENCE_KEY_ROLL_THRESHOLD, &thresh) == 0) {
     posture_config.balance_roll_thresh = (float)thresh;
   }
 
@@ -308,25 +309,79 @@ static void looper_work_handler(struct k_work *work)
     bool is_pitch_balanced = alg_posture_is_pitch_balanced();
     bool is_roll_balanced = alg_posture_is_roll_balanced();
 
+    // 判断是否在 roll=±30° 附近，过线的时候震动
+    bool through_roll_30 = (fabsf(fabsf(posture.roll) - 30.0f) < 2.0f);
+    pba_motor_front_en(through_roll_30);
 
-    bool alert = false;
-    if (is_pitch_balanced) {
-      alert = !(is_yaw_balanced && is_roll_balanced);
+    bool roll_in_30 = posture.roll > -30.0f && posture.roll < 30.0f;
+
+    // 加载电机模式配置（单电机/双电机）
+    uint8_t motor_mode = 0; // 0: single motor, 1: dual motor
+    int err = presistence_get(PERSISTENCE_KEY_MOTOR_MODE, &motor_mode);
+    if (err != 0) {
+      motor_mode = 0;
     }
-    // 亮灯 + 震动
-    pba_motor_front_en(alert);
+    // 加载困难模式配置（roll 范围）
+    uint8_t roll_hard = 0;
+    err = presistence_get(PERSISTENCE_KEY_PRECISION_MODE, &roll_hard);
+    if (err != 0) {
+      roll_hard = 0;
+    }
+
+    // 判断是否允许震动
+    bool can_vibe = true;
+    if (alg_posture_is_active()) { // 3min 没动会关机
+      // 若运动
+      pba_trigger_wtg_stable();
+    } else {
+      // 若静止
+      // 静止超过 0.8s 则不必再震动
+      bool can_vibe = pba_trigger_wtg_0p8_motor_stable();
+      if (can_vibe && !roll_in_30) {
+        pba_motor_en(true, motor_mode > 1);
+      }
+    }
+
+    // 若在 roll 允许范围内，判断是否符合标准姿势
+    bool alert = false;
+    if (roll_in_30) {
+      // 震动逻辑：
+      // pitch 前后 5° 范围内进行判断
+      bool is_pitch_in_range = (posture.pitch > -5.0f) && (posture.pitch < 5.0f);
+      if (is_pitch_in_range) {
+        // alert = !(is_yaw_balanced && is_roll_balanced);
+        switch(roll_hard) {
+          case 0: { // easy, roll in [-9°, 9°]
+            alert = fabsf(posture.roll) > 9.0f;
+            break;
+          }
+          case 1: { // medium, roll in [-7°, 7°]
+            alert = fabsf(posture.roll) > 7.0f;
+            break;
+          }
+          case 2: { // hard, roll in [-5°, 5°]
+            alert = fabsf(posture.roll) > 5.0f;
+            break;
+          }
+          default: {
+            alert = fabsf(posture.roll) > 9.0f; // default to easy
+            break;
+          }
+        }
+      }
+      if (alert) {
+        pba_motor_en(alert, motor_mode > 1);
+      }
+    }
+    // 亮灯逻辑：
     pba_led_green(!alert);
     pba_led_red(alert);
 
-    pba_led_update();
+    // pba_led_update();
 
     if (alert) { // 10min 没 alert 会关机
       pba_trigger_wtg_alert();
     }
-    if (alg_posture_is_active()) { // 3min 没动会关机
-      pba_trigger_wtg_stable();
-    }
-
     // pos:
     world_position_t position = alg_position_update(&posture, &current);
 
