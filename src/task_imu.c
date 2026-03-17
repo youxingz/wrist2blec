@@ -342,9 +342,9 @@ static void looper_work_handler(struct k_work *work)
     } else {
       // 若静止
       // 静止超过 0.8s 则不必再震动
-      bool can_vibe = pba_trigger_wtg_0p8_motor_stable();
+      can_vibe = pba_trigger_wtg_0p8_motor_stable();
       if (can_vibe && !roll_in_30) {
-        pba_motor_en(true, motor_mode > 1);
+        pba_motor_en(true, motor_mode > 0);
       }
     }
 
@@ -379,9 +379,9 @@ static void looper_work_handler(struct k_work *work)
           }
         }
       }
-      if (alert) {
-        pba_motor_en(alert, motor_mode > 1);
-      }
+    }
+    if (can_vibe) {
+      pba_motor_en(alert, motor_mode > 0);
     }
     // 亮灯逻辑：
     pba_led_green(!alert);
